@@ -1,0 +1,60 @@
+# Axes
+axes.labelsize		: 50
+
+
+# Ticks
+xtick.labelsize		: 45
+ytick.labelsize 	: 45	
+
+xtick.top		: True
+ytick.right		: True
+
+xtick.major.size	: 8.5
+xtick.major.width	: 1.2
+xtick.minor.size	: 5.5
+xtick.major.pad		: 8
+xtick.direction		: in
+
+ytick.major.size	: 8.5
+ytick.major.width	: 1.2
+ytick.minor.size	: 5.5
+ytick.major.pad		: 8
+ytick.direction		: in
+
+
+
+# default figsize already, keep width constant
+figure.figsize		: 16.0, 9.0
+
+# Text / Font Rendering (Computer Modern is default)
+text.usetex		: True
+font.family		: serif
+
+
+# Grid
+axes.grid           	: True
+
+
+# Figure details
+figure.dpi       	: 300         # figure dots per inch
+
+
+# Grid
+grid.color       	:   b0b0b0    # grid color
+grid.linestyle   	:   --        # solid
+grid.linewidth   	:   0.8       # in points
+grid.alpha		:   0.35
+
+
+# Legend
+legend.loc           	: best
+legend.fontsize      	: 25
+legend.fancybox      	: True
+legend.framealpha	: 1.0
+legend.markerscale	: 1.0
+
+
+# Lines
+lines.linewidth   	: 1.5       ## line width in points
+lines.linestyle   	: -       ## solid line
+#lines.markersize  	: 6
