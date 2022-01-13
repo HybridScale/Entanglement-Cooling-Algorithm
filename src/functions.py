@@ -106,13 +106,18 @@ def MC_Simulation_GPU(x, node_rank, MCsteps, MCsteps_old, loc_pairs , state, ee_
     
     for yy in range(MCsteps_old, MCsteps+1):
         random_pair, random_pair_id = select_cooling_evolution_indices(loc_pairs)
-        #random_gate, random_gate_id = select_cooling_evolution_gates()
-
         random_sigma_gate = sigma_list_device[np.random.randint(rand_sigma_value)]
 
+        start=time.time()
         new_state_DEVICE = ApplyLocalGate_GPU(random_sigma_gate,random_pair,state_DEVICE,Nsites,2,dt)
-        
+        end=time.time()
+        cum_time_apply_local_gate+= (end-start)
+
+        start=time.time()        
         ent_new_DEVICE, ee_list_new_DEVICE, relevant_partitions = Renyi2_aftergate_correct_GPU(Nsites,R, new_state_DEVICE,random_pair)
+        end=time.time()
+        cum_time_renyi+= (end-start)
+
         
         ent_new = cp.asnumpy(ent_new_DEVICE)
         ee_list_new = cp.asnumpy(ee_list_new_DEVICE)
@@ -145,7 +150,7 @@ def MC_Simulation_GPU(x, node_rank, MCsteps, MCsteps_old, loc_pairs , state, ee_
         if( yy %  print_exponent == 0 ):
             print("simulation", x, 'MC step = %d' % yy, "on", socket.gethostname())
 
-        if( yy % 100000 == 0 and MCsteps>MCsteps_old):
+        if( yy % 1000 == 0 and MCsteps>MCsteps_old):
             new_state = cp.asnumpy(new_state_DEVICE)
             save_state_file_name = "state_{}".format(x)
             f = open(str(states_dir)+"/"+str(save_state_file_name), "wb")
@@ -284,7 +289,6 @@ def cpu_sim(args):
                 if not os.path.exists(states_dir):
                     os.mkdir(states_dir)    
 
-
         #computing the initial Renyi2 entropy
         ent, ee_list = Renyi2(Nsites,R,eigenvectors[:,0])
     
@@ -302,6 +306,7 @@ def cpu_sim(args):
             MC_data_final = None
 
         comm.Reduce(lista_y, MC_data_final, op=MPI.SUM, root=0)
+
     
         if (rank == 0):
             save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
@@ -417,9 +422,10 @@ def gpu_sim(args):
 
         if (rank == 0):
                 if not os.path.exists(states_dir):
-                    os.mkdir(states_dir)    
+                    os.mkdir(states_dir)  
+    
 
-
+        start = time.time()
         #computing the initial Renyi2 entropy
         
         ent, ee_list = Renyi2(Nsites,R,eigenvectors[:,0])
@@ -433,11 +439,10 @@ def gpu_sim(args):
         node_rank = node_comm.Get_rank()
         node_size = node_comm.Get_size()
         number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
-        print(rank, node_rank, node_rank % number_of_device_on_node)
 
         on_device  = node_rank % number_of_device_on_node
         with cp.cuda.Device(on_device):
-            print("node rank", node_rank, "Starting simulation on device", on_device,flush=True)
+            print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(0)['name'] ,flush=True)
             MC_Simulation_GPU(rank, node_rank, MCsteps, 1, list_pairs_local_ham, eigenvectors[:,0], ee_list, Nsites, dt, R, T_grid)
     
         if( rank ==0 ):
@@ -446,11 +451,16 @@ def gpu_sim(args):
             MC_data_final = None
 
         comm.Reduce(lista_y, MC_data_final, op=MPI.SUM, root=0)
-    
+        end = time.time()
+
         if (rank == 0):
+            print("time of exe", round(end-start,4), " s")
             save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
             pickle.dump(MC_data_final/size, save_file)
             save_file.close()
+
+        
+
             
 def batch_sim_gpu(args):
     print(args)
