@@ -13,6 +13,14 @@ import time
 import nvtx
 import socket
 
+cumulative_time = 0
+cumulative_time_gemm_apply_lg = 0
+cumulative_time_gemm_partial_trace = 0
+
+#counters for number of code executed
+counter_gemm_local_gate = 0
+counter_gemm_partial_trace = 0
+
 def tfim_LocalHamiltonian_new(lambdaa):
 
     """ Trasverse Ising Hamiltonian - Fabio/Marco """ 
@@ -52,6 +60,9 @@ def tfim_LocalHamiltonian_new(lambdaa):
 
 def PartialTraceGeneralTensor(N,index_list,A):
     """ Function that computes the partial trace over index_list indices (the index list needs to be ordered from smaller to bigger index)"""
+
+    global cumulative_time_gemm_partial_trace
+    global counter_gemm_partial_trace
 
     # reshape the input vectors into tensors (here we exploit the fact that psi* is just the complex conjugate of psi )
     reshape_array_default = np.full(N,2)    
@@ -118,7 +129,12 @@ def PartialTraceGeneralTensor(N,index_list,A):
     B = A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list)),2**len(index_list))
 
     # FINAL MULTIPLICATION
+    start = time.time()
+    
     out = (A @ np.conjugate(B))
+    
+    cumulative_time_gemm_partial_trace += time.time() - start
+    counter_gemm_partial_trace += 1
 
     return out
 
@@ -213,6 +229,10 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
 
     j = index_pair[0]
 
+    #set global variables 
+    global cumulative_time_gemm_apply_lg
+    global counter_gemm_local_gate
+
    # reshape into a tensor with N legs, each leg with dimension d
     reshape_array_default         = np.full(N,d)    
     psi = psi.reshape(reshape_array_default)
@@ -230,7 +250,12 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = N-1
         transpose_array_default2[N-1]  = 0
 
+        start = time.time()
+
         psi = (sigma.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+
+        cumulative_time_gemm_apply_lg += time.time() - start
+        counter_gemm_local_gate += 1
 
 
     elif(j == 2):
@@ -247,8 +272,13 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = 0
         transpose_array_default2[2]    = 1
 
+        start = time.time()
+
         psi = (sigma.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
-      
+
+        cumulative_time_gemm_apply_lg += time.time() - start
+        counter_gemm_local_gate += 1
+
     else:    
         # transpose the tensor with N legs to match the position of the local operator
         transpose_array_default       = np.arange(N)
@@ -257,8 +287,13 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
         transpose_array_default[j-1]  = 0
         transpose_array_default[j]    = 1
 
+        start = time.time()
+
         psi = (sigma.reshape(4,4) @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
 
+        end = time.time()
+        cumulative_time_gemm_apply_lg += (end - start)
+        counter_gemm_local_gate += 1
 
     return psi
 
@@ -379,8 +414,8 @@ def Renyi2_aftergate_correct(N,R,psi,gate_id):
 	# compute the trace of the product of two reduceded density matrices
         entropy = -np.log((rho_reduced * rho_reduced.T).sum())
         
-        ee.append(entropy.real)        
-
+        ee.append(entropy.real)
+		
     entropy = np.average(ee)
 
     return entropy,ee,relevant_list
@@ -414,9 +449,11 @@ def create_sigma_list_GPU(dt):
 def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
     """ apply exponentiated local 2 site gate, this is generalized to any distance pair but does not involve pairs that are there due to PBC"""
 
-    #sigma = linalg.expm(-1j*dt*sigma)
-    #sigma_DEVICE = calculate_sigma_GPU(dt, sigma)
+    #set global variables 
+    global cumulative_time_gemm_apply_lg
+    global counter_gemm_local_gate
 
+    #print(cumulative_time_gemm_apply_lg)
     j = index_pair[0]
 
    # reshape into a tensor with N legs, each leg with dimension d
@@ -436,8 +473,12 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = N-1
         transpose_array_default2[N-1]  = 0
 
+        start = time.time()
+
         psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
 
+        cumulative_time_gemm_apply_lg += (time.time()-start)
+        counter_gemm_local_gate += 1
 
     elif(j == 2):
 
@@ -453,7 +494,12 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = 0
         transpose_array_default2[2]    = 1
 
+        start = time.time()
+
         psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+
+        cumulative_time_gemm_apply_lg += (time.time()-start)
+        counter_gemm_local_gate += 1
       
     else:    
         # transpose the tensor with N legs to match the position of the local operator
@@ -463,7 +509,12 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default[j-1]  = 0
         transpose_array_default[j]    = 1
 
+        start = time.time()
+
         psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
+
+        cumulative_time_gemm_apply_lg += (time.time()-start)
+        counter_gemm_local_gate += 1
 
 
     return psi
@@ -471,6 +522,9 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
 @nvtx.annotate("PartialTrace" , color="black")
 def PartialTraceGeneralTensor_new_GPU(N,index_list, A):
     """ Function that computes the partial trace over index_list indices (the index list needs to be ordered from smaller to bigger index)"""
+
+    global cumulative_time_gemm_partial_trace
+    global counter_gemm_partial_trace
 
     # reshape the input vectors into tensors (here we exploit the fact that psi* is just the complex conjugate of psi )
     reshape_array_default = np.full(N,2)    
@@ -494,7 +548,12 @@ def PartialTraceGeneralTensor_new_GPU(N,index_list, A):
     B_DEVICE = A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list)),2**len(index_list))
 
     # FINAL MULTIPLICATION
+    start = time.time()
+
     out_DEVICE = (A_DEVICE @ cp.conjugate(B_DEVICE))
+
+    cumulative_time_gemm_partial_trace += time.time() - start
+    counter_gemm_partial_trace += 1
     
     return (out_DEVICE)
 
@@ -524,15 +583,222 @@ def Renyi2_aftergate_correct_GPU(N,R,psi_DEVICE,gate_id):
     psis_DEVICE = [psi_DEVICE, psi_DEVICE2] 
     rho_reduced_list = []
     for i in range(0,len(kk)):
+
         # compute the partial trace
         rho_reduced_list.append( PartialTraceGeneralTensor_new_GPU(N,kk[i],psis_DEVICE[i]))
-	    #compute the trace of the product of two reduceded density matrices
+	    
+        #compute the trace of the product of two reduceded density matrices
         ee_DEVICE.append((-cp.log((rho_reduced_list[i] * rho_reduced_list[i].T).sum())).real )
 
         
     ee_DEVICE = cp.asarray(ee_DEVICE)
+
     entropy_DEVICE = cp.average(ee_DEVICE)
 
     return entropy_DEVICE,ee_DEVICE,relevant_list
+
+
+def select_cooling_evolution_indices_batch(list_pairs, batch_size):
+    """ select a random pair of indices (adjacent) to which we apply to the local gates later """
+    pair_list = []
+    idd_list  = []
+    
+    for _ in range(batch_size):
+
+        # select a random value (uniform)
+        rand_value = np.random.uniform(0,1,1)
+
+        # take the random pair with equal probability
+        for ij in range(0,len(list_pairs)):
+            if (rand_value <= (1.0/len(list_pairs))*(ij + 1)):
+                if (rand_value > (1.0/len(list_pairs))*(ij)):
+                    pair = list_pairs[ij]
+
+        # find where the randomly selected pair is located in the initial list of pairs
+        idd =  list_pairs.index(pair)
+        pair_list.append(pair)
+        idd_list.append(idd)
+
+
+    #return pair, idd
+    return pair_list, idd_list
+
+
+def select_sigma_gates_batch(sigmas, batch_size):
+	
+	sigma_gates = []
+	sigma_random_select_batch_list = np.random.randint(0, high = len(sigmas) , size = batch_size)
+
+	for i in range(batch_size):
+	
+		sigma_gates.append( sigmas[ sigma_random_select_batch_list[i]])
+		
+	return cp.array(sigma_gates)
+
+@nvtx.annotate("ApplyLocalGate_batch", color="blue")
+def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
+    """ apply exponentiated local 2 site gate, this is generalized to any distance pair but does not involve pairs that are there due to PBC"""
+
+    tmp_psi = []
+    transpose_array_default_batch = []
+
+    #set global variables 
+    global cumulative_time_gemm_apply_lg
+    global counter_gemm_local_gate
+
+
+    for batch_num in range(batch_size):
+        j = index_pair[batch_num][0]
+
+        # reshape into a tensor with N legs, each leg with dimension d
+        reshape_array_default        = np.full(N,d)    
+        tmp_psi.append(psi[batch_num].reshape(reshape_array_default))
+
+        if (j == N):
+            # transpose the tensor with N legs to match the position of the local operator
+            transpose_array_default1       = np.arange(N)
+            transpose_array_default2       = transpose_array_default1.copy()
+
+            transpose_array_default1[0]    = N-1
+            transpose_array_default1[1]    = 0
+            transpose_array_default1[N-1]  = 1
+
+            transpose_array_default2[0]    = 1
+            transpose_array_default2[1]    = N-1
+            transpose_array_default2[N-1]  = 0
+
+            tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default1).reshape(4,2**(N-2))
+            transpose_array_default_batch.append(transpose_array_default2)
+
+        elif(j == 2):
+
+            # transpose the tensor with N legs to match the position of the local operator
+            transpose_array_default1       = np.arange(N)
+            transpose_array_default2       = transpose_array_default1.copy()
+
+            transpose_array_default1[0]    = 1
+            transpose_array_default1[1]    = 2
+            transpose_array_default1[2]    = 0
+
+            transpose_array_default2[0]    = 2
+            transpose_array_default2[1]    = 0
+            transpose_array_default2[2]    = 1
+
+            tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default1).reshape(4,2**(N-2))
+            transpose_array_default_batch.append(transpose_array_default2)
+
+        else:    
+            # transpose the tensor with N legs to match the position of the local operator
+            transpose_array_default       = np.arange(N)
+            transpose_array_default[0]    = j-1
+            transpose_array_default[1]    = j
+            transpose_array_default[j-1]  = 0
+            transpose_array_default[j]    = 1
+
+            tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default).reshape(4,2**(N-2))
+            transpose_array_default_batch.append(transpose_array_default)
+
+    start = time.time()
+    batched_psi = cp.matmul(sigmas, cp.array(tmp_psi))
+    cumulative_time_gemm_apply_lg += time.time() - start
+
+    #increment counter
+    #print(counter_gemm_local_gate)
+    counter_gemm_local_gate +=1
+    #print(counter_gemm_local_gate)
+
+    tmp_psi = []
+    
+    for Iter in range(batch_size):
+        tmp_psi.append(batched_psi[Iter].reshape(reshape_array_default).transpose(transpose_array_default_batch[batch_num]).reshape(2**N))
+    
+    return cp.array(tmp_psi)
+
+@nvtx.annotate("PartialTraceGeneralTensor_batch", color="red")
+def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
+    """ Function that computes the partial trace over index_list indices (the index list needs to be ordered from smaller to bigger index)"""
+    
+    A_DEVICE = []
+    B_DEVICE = []
+
+    global cumulative_time_gemm_partial_trace
+    global counter_gemm_partial_trace
+    
+    for batch_num in range(len_kk):
+
+        # reshape the input vectors into tensors (here we exploit the fact that psi* is just the complex conjugate of psi )
+        reshape_array_default = np.full(N,2)    
+        A_initial = A.reshape(reshape_array_default)
+
+        # generate initial transpose indices vector (we apply permutations and operatorion so transposition is correctly performed )
+        list_A = np.arange(N)
+        list_B = np.arange(N)
+
+        # this changing the indeces by one is because of python stuff (the numbering starts from zero and not 1)
+        index_list_tmp = np.array(index_list[batch_num]) - 1
+
+        A_temp = np.take(list_A, index_list_tmp)
+        B_temp = np.take(list_B, index_list_tmp)
+
+        transpose2_A = np.append(A_temp, np.delete(list_A, index_list_tmp) )
+        transpose2_B = np.append(np.delete(list_B, index_list_tmp), B_temp )
+
+        ############### MAIN OPERATION AFTER ALL PREPARATION HAS BEEN PERFORMED ::: TRANSPOSITION ON A and B
+        A_DEVICE.append(A_initial.transpose(transpose2_A).reshape(2**len(index_list_tmp),2**(N - len(index_list_tmp))))
+        B_DEVICE.append(A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list_tmp)),2**len(index_list_tmp)))
+
+    # FINAL MULTIPLICATION
+    start = time.time()
+    out_DEVICE = (cp.array(A_DEVICE) @ cp.conjugate(cp.array(B_DEVICE)))
+    cumulative_time_gemm_partial_trace += time.time() - start
+
+    #increment counter
+    counter_gemm_partial_trace += 1
+
+    return (out_DEVICE)
+
+@nvtx.annotate("Renyi2_aftergate_correct_batch", color="purple")
+def Renyi2_aftergate_correct_GPU_batch(N,R,psi_DEVICE, batch_size, gate_id):
+    """ compute the Renyi 2 entropy of a state psi with the subsystem being size R. This function is different from vonNeumann because it computes only 2 of the partitions that are actually relevant after the application of a local gate. Variable gate_id provides this information.  """
+
+    # fix the R
+    R = int(math.floor(R))
+
+    # generating the indices that get traced out
+    list_indic    = generate_dictionary_adjacent(N,R)
+    rho_reducedes = []
+    relevant_list = []
+
+    
+    for batch_num in range(batch_size):
+        
+        gate_id_tmp = gate_id[batch_num]
+
+        kk = []
+        relevant_list_tmp = []
+        
+        for i in range(0,len(list_indic)):
+
+            if (list_indic[i][0] == gate_id_tmp[1]):
+                kk.append(list_indic[i])
+                relevant_list_tmp.append(i)
+            if (list_indic[i][R-1] == gate_id_tmp[0]):
+                kk.append(list_indic[i])
+                relevant_list_tmp.append(i)
+                
+        relevant_list.append(relevant_list_tmp)
+        
+        rho_tmp = PartialTraceGeneralTensor_new_GPU_batch(N, kk, psi_DEVICE[batch_num], len(kk))
+        rho_reducedes.append( rho_tmp )
+        
+        
+    rho_reducedes = cp.array(rho_reducedes)    
+    rho_reduceds_product = (rho_reducedes * rho_reducedes.transpose(0,1,3,2)).sum(axis = (2,3))
+    
+    ee = (-cp.log( rho_reduceds_product)).real
+    entropy = np.average(ee, axis = 1)
+
+        
+    return entropy, ee, relevant_list
 
 
