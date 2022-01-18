@@ -48,18 +48,5 @@ if __name__ == "__main__":
     handle_batchGEMM_args(subparser)
 
     args = parser.parse_args()
-
-    if (args.mode == 'GPU'):
-        set_simulations(args)
-
-    if (args.mode == 'CPU'):
-        set_simulations(args)
-
-    if (args.mode == 'batchedGEMM'):
-        set_simulations(args)
-
-
-
-
-
+    set_simulations(args)
 
