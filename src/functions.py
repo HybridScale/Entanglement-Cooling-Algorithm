@@ -23,8 +23,10 @@ def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsite
     
     MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
     
-    if (MCsteps_exponent >4):
-        print_exponent = int( 1000 )  
+    if (MCsteps_exponent > 4):
+        print_exponent = int( 1000 )
+    elif (MCsteps_exponent <= 0):
+        print_exponent = 1  
     else:
         print_exponent = int( 10**(MCsteps_exponent-1) )  #Printf only 10 times which steps computing
     
@@ -79,7 +81,7 @@ def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsite
             f.close()
             print("rank", x, "saved state on step", yy)
 
-        if (yy % int(MCsteps/100) == 0):
+        if ( MCsteps >=100 and yy % int(MCsteps/100) == 0):
     	    cc += 1
 
     return np.array(lista_y)
@@ -512,7 +514,8 @@ def set_simulations(args):
             
             # set device to use 
             with cp.cuda.Device(on_device):
-                #print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(0)['name'] ,flush=True)
+                deviceProp = cp.cuda.runtime.getDeviceProperties(on_device);
+                print("node rank", node_rank, "Starting simulation on device", str(deviceProp['name']), "PCI BUS:", str(deviceProp['pciBusID']), "UUID:", deviceProp['uuid'], flush=True)
                
                 if(args.mode == "GPU"):
                     lista_y = MC_Simulation_GPU(array_job_rank, MCsteps, MCsteps_old, list_pairs_local_ham, eigenvectors, ee_list, Nsites, dt, R, T_grid, lista_y)           
@@ -544,6 +547,3 @@ def set_simulations(args):
             save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
             pickle.dump(MC_data_final/size, save_file)
             save_file.close()
-
-     
-    
