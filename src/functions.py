@@ -6,6 +6,7 @@ import os
 import dependecies as dep
 from scipy.sparse.linalg import LinearOperator, eigsh, eigs
 import time
+import sys
 
 cumulative_time_apply_local_gate = 0
 cumulative_time_renyi            = 0
@@ -16,6 +17,9 @@ def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsite
     
     global cumulative_time_apply_local_gate
     global cumulative_time_renyi
+
+    dep.counter_gemm_partial_trace = 0
+
     
     MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
     
@@ -87,7 +91,9 @@ def MC_Simulation_GPU(x, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, N
 
     global cumulative_time_apply_local_gate
     global cumulative_time_renyi
-    
+
+    dep.counter_gemm_partial_trace = 0
+
     MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
     
     if (MCsteps_exponent >4):
@@ -167,6 +173,9 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
 
     global cumulative_time_apply_local_gate
     global cumulative_time_renyi
+
+    dep.counter_gemm_partial_trace = 0
+
 
     MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
     
@@ -260,6 +269,15 @@ def print_times(time_lg_max, time_renyi_max, total_time):
     print('{:30s} {:5.0f}'.format("counter gemm partial trace:",dep.counter_gemm_partial_trace ))
     print('\n{:30s} {:5.4f}'.format("total time:",total_time ))
 
+def print_times_csv_format(mode, time_lg_max, time_renyi_max, total_time):
+    print(mode, ",",
+          time_lg_max, ",",
+          dep.cumulative_time_gemm_apply_lg, ",",
+          dep.counter_gemm_local_gate, ",",
+          time_renyi_max, ",",
+          dep.cumulative_time_gemm_partial_trace, ",",
+          dep.counter_gemm_partial_trace, ",",
+          total_time )
 
 
 def set_simulations(args):
@@ -400,7 +418,14 @@ def set_simulations(args):
         if (rank == 0):
             total_time = end - start
             print_times(cumulative_time_apply_local_gate, cumulative_time_renyi, total_time)
-            #print("time of exe", round(end-start,4), " s")
+
+            with open('output.csv', 'a') as f:
+                sys.stdout = f
+                print_times_csv_format(args.mode,
+                                       cumulative_time_apply_local_gate,
+                                       cumulative_time_renyi,
+                                       total_time)
+
             save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
             pickle.dump(MC_data_final/size, save_file)
             save_file.close()
