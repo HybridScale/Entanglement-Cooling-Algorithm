@@ -311,6 +311,9 @@ def set_simulations(args):
     dt        = np.pi/10.0                   # 'time-evolution' time step (this is a parameter we should change a bit to see 
                                              # if the results are consistent with it)
 
+    if( args.mode != "CPU"):
+        cp.matmul(cp.random.random(1_000), cp.random.random(1_000))
+
     # defining a logaritmically decreasing temperature grid
     T_grid    = np.logspace(-4,-8, num=101,base=10)
     #print('T_grid =', T_grid)
