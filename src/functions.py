@@ -11,6 +11,9 @@ import sys
 cumulative_time_apply_local_gate = 0
 cumulative_time_renyi            = 0
 
+start_gpu = cp.cuda.Event()
+end_gpu = cp.cuda.Event()
+
 def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid, lista_y):
     accepted = 0
     cc = 0
@@ -34,14 +37,14 @@ def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsite
         random_pair, random_pair_id = dep.select_cooling_evolution_indices(loc_paris)
         random_gate, random_gate_id = dep.select_cooling_evolution_gates()
 
-        start=time.time()
+        start= MPI.Wtime()
         new_state = dep.ApplyLocalGate(random_gate,random_pair,state,Nsites,2,dt)
-        cumulative_time_apply_local_gate+= time.time()-start
+        cumulative_time_apply_local_gate+= MPI.Wtime()-start
 
 
-        start=time.time()
+        start=MPI.Wtime()
         ent_new, ee_list_new, relevant_partitions = dep.Renyi2_aftergate_correct(Nsites,R,new_state,random_pair)
-        cumulative_time_renyi+= time.time()-start
+        cumulative_time_renyi+= MPI.Wtime()-start
 
         ent_tamp = ee_list_old.copy()
 
@@ -112,15 +115,18 @@ def MC_Simulation_GPU(x, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, N
         random_pair, random_pair_id = dep.select_cooling_evolution_indices(loc_pairs)
         random_sigma_gate = sigma_list_device[np.random.randint(rand_sigma_value)]
 
-        start=time.time()
+        
+        start_gpu.record()
         new_state_DEVICE = dep.ApplyLocalGate_GPU(random_sigma_gate,random_pair,state_DEVICE,Nsites,2,dt)
-        cumulative_time_apply_local_gate+= time.time()-start
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_apply_local_gate += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
-
-        start=time.time()        
+        start_gpu.record()      
         ent_new_DEVICE, ee_list_new_DEVICE, relevant_partitions = dep.Renyi2_aftergate_correct_GPU(Nsites,R, new_state_DEVICE,random_pair)
-        cumulative_time_renyi+= time.time()-start
-
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_renyi += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
         
         ent_new = cp.asnumpy(ent_new_DEVICE)
         ee_list_new = cp.asnumpy(ee_list_new_DEVICE)
@@ -165,6 +171,12 @@ def MC_Simulation_GPU(x, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, N
 
         if (yy % int(MCsteps/100) == 0):
             cc += 1
+
+    # calculate all timing in s as they are returned in ms
+    cumulative_time_apply_local_gate /= 1000
+    cumulative_time_renyi /= 1000
+    dep.cumulative_time_gemm_apply_lg /= 1000
+    dep.cumulative_time_gemm_partial_trace /= 1000
             
     return cp.asnumpy(cp.array(lista_y))
 
@@ -177,7 +189,6 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
     global cumulative_time_renyi
 
     dep.counter_gemm_partial_trace = 0
-
 
     MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
     
@@ -208,14 +219,18 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
         random_pairs, random_pair_ids = dep.select_cooling_evolution_indices_batch(loc_pairs, batch_size)
         random_sigma_gates = dep.select_sigma_gates_batch(sigma_list_device, batch_size)
 
-        start=time.time()
+        start_gpu.record()      
         new_states = dep.ApplyLocalGate_GPU_batch(random_sigma_gates, batch_size ,random_pairs, states, Nsites, 2, dt)
-        cumulative_time_apply_local_gate+= (time.time()-start)
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_apply_local_gate+= cp.cuda.get_elapsed_time(start_gpu, end_gpu)  
 
-        start=time.time()        
+        start_gpu.record()      
         ents_new, ees_list_new, relevant_partitions = dep.Renyi2_aftergate_correct_GPU_batch(Nsites, R, new_states, batch_size, random_pairs)
-        cumulative_time_renyi+= time.time()-start
-        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_renyi += cp.cuda.get_elapsed_time(start_gpu, end_gpu)  
+
         ent_tamp = ee_list_old_list.copy()
         for batch_num in range(batch_size):
 
@@ -257,6 +272,12 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
 
         if (yy % int(MCsteps/100) == 0):
             cc += 1
+    
+    # calculate all timing in s as they are returned in ms
+    cumulative_time_apply_local_gate /= 1000
+    cumulative_time_renyi /= 1000
+    dep.cumulative_time_gemm_apply_lg /= 1000
+    dep.cumulative_time_gemm_partial_trace /= 1000
             
     return cp.asnumpy(cp.array(lista_y))
 

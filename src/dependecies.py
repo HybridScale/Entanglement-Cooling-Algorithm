@@ -21,6 +21,10 @@ cumulative_time_gemm_partial_trace = 0
 counter_gemm_local_gate = 0
 counter_gemm_partial_trace = 0
 
+# Create cuda events for 
+start_gpu = cp.cuda.Event()
+end_gpu = cp.cuda.Event()
+
 def tfim_LocalHamiltonian_new(lambdaa):
 
     """ Trasverse Ising Hamiltonian - Fabio/Marco """ 
@@ -509,11 +513,13 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default[j-1]  = 0
         transpose_array_default[j]    = 1
 
-        start = time.time()
+        start_gpu.record()
 
         psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
 
-        cumulative_time_gemm_apply_lg += (time.time()-start)
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
         counter_gemm_local_gate += 1
 
 
@@ -548,11 +554,15 @@ def PartialTraceGeneralTensor_new_GPU(N,index_list, A):
     B_DEVICE = A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list)),2**len(index_list))
 
     # FINAL MULTIPLICATION
-    start = time.time()
+
+    start_gpu.record()
 
     out_DEVICE = (A_DEVICE @ cp.conjugate(B_DEVICE))
-
-    cumulative_time_gemm_partial_trace += time.time() - start
+    
+    end_gpu.record()
+    end_gpu.synchronize()
+    
+    cumulative_time_gemm_partial_trace += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
     counter_gemm_partial_trace += 1
     
     return (out_DEVICE)
@@ -697,15 +707,16 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
 
             tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default).reshape(4,2**(N-2))
             transpose_array_default_batch.append(transpose_array_default)
-
-    start = time.time()
+    
+    start_gpu.record()
     batched_psi = cp.matmul(sigmas, cp.array(tmp_psi))
-    cumulative_time_gemm_apply_lg += time.time() - start
+
+    end_gpu.record()
+    end_gpu.synchronize()
+    cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
     #increment counter
-    #print(counter_gemm_local_gate)
     counter_gemm_local_gate +=1
-    #print(counter_gemm_local_gate)
 
     tmp_psi = []
     
@@ -748,9 +759,11 @@ def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
         B_DEVICE.append(A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list_tmp)),2**len(index_list_tmp)))
 
     # FINAL MULTIPLICATION
-    start = time.time()
+    start_gpu.record()
     out_DEVICE = (cp.array(A_DEVICE) @ cp.conjugate(cp.array(B_DEVICE)))
-    cumulative_time_gemm_partial_trace += time.time() - start
+    end_gpu.record()
+    end_gpu.synchronize()
+    cumulative_time_gemm_partial_trace += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
     #increment counter
     counter_gemm_partial_trace += 1
