@@ -271,8 +271,9 @@ def print_times(time_lg_max, time_renyi_max, total_time):
     print('{:30s} {:5.0f}'.format("counter gemm partial trace:",dep.counter_gemm_partial_trace ))
     print('\n{:30s} {:5.4f}'.format("total time:",total_time ))
 
-def print_times_csv_format(mode, time_lg_max, time_renyi_max, total_time):
+def print_times_csv_format(mode, procedure_size, time_lg_max, time_renyi_max, total_time):
     print(mode, ",",
+          procedure_size, ",",
           time_lg_max, ",",
           dep.cumulative_time_gemm_apply_lg, ",",
           dep.counter_gemm_local_gate, ",",
@@ -426,10 +427,18 @@ def set_simulations(args):
 
             with open('output.csv', 'a') as f:
                 sys.stdout = f
-                print_times_csv_format(args.mode,
-                                       cumulative_time_apply_local_gate,
-                                       cumulative_time_renyi,
-                                       total_time)
+                
+                if (args.mode == "batchedGEMM"):
+                    procedure_size_per_mpi = args.bs
+
+                else:
+                    procedure_size_per_mpi = size
+
+                print_times_csv_format( args.mode,
+                                        procedure_size_per_mpi,
+                                        cumulative_time_apply_local_gate,
+                                        cumulative_time_renyi,
+                                        total_time)
 
             save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
             pickle.dump(MC_data_final/size, save_file)
