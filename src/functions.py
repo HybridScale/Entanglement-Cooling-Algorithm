@@ -152,8 +152,6 @@ def MC_Simulation_GPU(x, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, N
             state_DEVICE = new_state_DEVICE.copy()
             ee_list_old = ent_tamp.copy()
 
-
-        #lista_y.append(np.average(ee_list_old))
         lista_y = np.append(lista_y, np.average(ee_list_old))
 
         if( yy %  print_exponent == 0 ):
@@ -176,6 +174,7 @@ def MC_Simulation_GPU(x, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, N
     cumulative_time_apply_local_gate /= 1000
     cumulative_time_renyi /= 1000
     dep.cumulative_time_gemm_apply_lg /= 1000
+    dep.cumulative_time_prepare_apply_lg /= 1000
     dep.cumulative_time_gemm_partial_trace /= 1000
             
     return cp.asnumpy(cp.array(lista_y))
@@ -286,22 +285,28 @@ def print_times(time_lg_max, time_renyi_max, total_time):
     print("time: ", )
     print('{:30s} {:5.4f}'.format("apply local gate:",time_lg_max ))
     print('{:30s} {:5.4f}'.format("gemm apply local gate:",dep.cumulative_time_gemm_apply_lg ))
+    print('{:30s} {:5.4f}'.format("prepare apply local gate:",dep.cumulative_time_prepare_apply_lg ))
     print('{:30s} {:5.0f}'.format("counter gemm apply lg:",dep.counter_gemm_local_gate ))
     print('\n{:30s} {:5.4f}'.format("renyi2: ", time_renyi_max ))
     print('{:30s} {:5.4f}'.format("gemm partial trace:",dep.cumulative_time_gemm_partial_trace ))
     print('{:30s} {:5.0f}'.format("counter gemm partial trace:",dep.counter_gemm_partial_trace ))
     print('\n{:30s} {:5.4f}'.format("total time:",total_time ))
 
-def print_times_csv_format(mode, procedure_size, time_lg_max, time_renyi_max, total_time):
-    print(mode, ",",
-          procedure_size, ",",
-          time_lg_max, ",",
-          dep.cumulative_time_gemm_apply_lg, ",",
-          dep.counter_gemm_local_gate, ",",
-          time_renyi_max, ",",
-          dep.cumulative_time_gemm_partial_trace, ",",
-          dep.counter_gemm_partial_trace, ",",
-          total_time )
+def print_times_csv_format(arguments, procedure_size, time_lg_max, time_renyi_max, total_time):
+    print(arguments.mode,
+          arguments.N,
+          arguments.R,
+          arguments.L,
+          arguments.MC,
+          procedure_size,
+          time_lg_max,
+          dep.cumulative_time_gemm_apply_lg,
+          dep.cumulative_time_prepare_apply_lg,
+          dep.counter_gemm_local_gate,
+          time_renyi_max,
+          dep.cumulative_time_gemm_partial_trace,
+          dep.counter_gemm_partial_trace,
+          total_time , sep=", ")
 
 
 def set_simulations(args):
@@ -403,7 +408,7 @@ def set_simulations(args):
         
         array_job_rank = rank + size * args.array_job_id
         start = time.time()
-        if( (args.mode == "GPU") or (args.mode == "batch") or (args.mode == "batchedGEMM")):
+        if( (args.mode == "GPU") or (args.mode == "batchedGEMM")):
             node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
             node_rank = node_comm.Get_rank()
             node_size = node_comm.Get_size()
@@ -455,7 +460,7 @@ def set_simulations(args):
                 else:
                     procedure_size_per_mpi = size
 
-                print_times_csv_format( args.mode,
+                print_times_csv_format( args,
                                         procedure_size_per_mpi,
                                         cumulative_time_apply_local_gate,
                                         cumulative_time_renyi,

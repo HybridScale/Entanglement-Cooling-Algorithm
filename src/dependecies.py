@@ -15,6 +15,7 @@ import socket
 
 cumulative_time = 0
 cumulative_time_gemm_apply_lg = 0
+cumulative_time_prepare_apply_lg = 0
 cumulative_time_gemm_partial_trace = 0
 
 #counters for number of code executed
@@ -456,6 +457,7 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
     #set global variables 
     global cumulative_time_gemm_apply_lg
     global counter_gemm_local_gate
+    global cumulative_time_prepare_apply_lg
 
     #print(cumulative_time_gemm_apply_lg)
     j = index_pair[0]
@@ -477,12 +479,35 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = N-1
         transpose_array_default2[N-1]  = 0
 
-        start = time.time()
+        #psi = (sigma_DEVICE @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+        
+        # Prepare tensor for gemm operation
+        start_gpu.record()
+        
+        psi = psi.transpose(transpose_array_default1).reshape(4,2**(N-2))
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
-        psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+        # Gemm operation 
+        start_gpu.record()
 
-        cumulative_time_gemm_apply_lg += (time.time()-start)
+        psi = sigma_DEVICE @ psi
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
         counter_gemm_local_gate += 1
+
+        # Transpose and rashape bach to origininal shape tensor
+        start_gpu.record()
+
+        psi = psi.reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
     elif(j == 2):
 
@@ -498,12 +523,35 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = 0
         transpose_array_default2[2]    = 1
 
-        start = time.time()
+        #psi = (sigma_DEVICE @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
 
-        psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+        # Prepare tensor for gemm operation
+        start_gpu.record()
+        
+        psi = psi.transpose(transpose_array_default1).reshape(4,2**(N-2))
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
-        cumulative_time_gemm_apply_lg += (time.time()-start)
+        # Gemm operation 
+        start_gpu.record()
+
+        psi = sigma_DEVICE @ psi
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
         counter_gemm_local_gate += 1
+
+        # Transpose and rashape bach to origininal shape tensor
+        start_gpu.record()
+
+        psi = psi.reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
       
     else:    
         # transpose the tensor with N legs to match the position of the local operator
@@ -513,14 +561,35 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
         transpose_array_default[j-1]  = 0
         transpose_array_default[j]    = 1
 
+        #psi = (sigma_DEVICE @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
+
+        # Prepare tensor for gemm operation
+        start_gpu.record()
+        
+        psi = psi.transpose(transpose_array_default).reshape(4,2**(N-2))
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
+
+        # Gemm operation 
         start_gpu.record()
 
-        psi = (sigma_DEVICE.reshape(4,4) @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
-
+        psi = sigma_DEVICE @ psi
+        
         end_gpu.record()
         end_gpu.synchronize()
         cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
         counter_gemm_local_gate += 1
+
+        # Transpose and rashape bach to origininal shape tensor
+        start_gpu.record()
+
+        psi = psi.reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
+        
+        end_gpu.record()
+        end_gpu.synchronize()
+        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
 
     return psi
