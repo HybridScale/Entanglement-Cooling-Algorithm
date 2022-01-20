@@ -11,8 +11,6 @@ import sys
 cumulative_time_apply_local_gate = 0
 cumulative_time_renyi            = 0
 
-start_gpu = cp.cuda.Event()
-end_gpu = cp.cuda.Event()
 
 def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid, lista_y):
     accepted = 0
@@ -294,11 +292,11 @@ def print_times(time_lg_max, time_renyi_max, total_time):
 
 def print_times_csv_format(arguments, procedure_size, time_lg_max, time_renyi_max, total_time):
     print(arguments.mode,
+          procedure_size,
           arguments.N,
           arguments.R,
           arguments.L,
           arguments.MC,
-          procedure_size,
           time_lg_max,
           dep.cumulative_time_gemm_apply_lg,
           dep.cumulative_time_prepare_apply_lg,
@@ -308,6 +306,29 @@ def print_times_csv_format(arguments, procedure_size, time_lg_max, time_renyi_ma
           dep.counter_gemm_partial_trace,
           total_time , sep=", ")
 
+
+def create_and_append_output():
+    # Create file output.csv if does not already exists
+    if (not os.path.exists("output.csv")):
+        f = open("output.csv", "a")
+        # Print in files header/column names
+        print("Mode, ",
+              "Procedure_size, ",
+              "N, ",
+              "R, ",
+              "L, ",
+              "MC, ",
+              "Apply_local_gate, ",
+              "Apply_local_gate_gemm, ",
+              "Apply_local_gate_prepare, ",
+              "Appyl_local_gate_#gemm, ",
+              "Renyi2, ",
+              "Partial_trace_gemm, ",
+              "Partial_trace_#gemm, ",
+              "Total_time, ",
+               file=f)
+        f.close()
+  
 
 def set_simulations(args):
     # this dumb function doesn't work when in dependecies.py file so we put it here
@@ -393,8 +414,10 @@ def set_simulations(args):
         
         # check for/create saved states folder 
         if (rank == 0):
-                if not os.path.exists(states_dir):
-                    os.mkdir(states_dir)  
+            create_and_append_output()
+
+            if not os.path.exists(states_dir):
+                os.mkdir(states_dir)  
     
         start = time.time()
         
@@ -415,11 +438,19 @@ def set_simulations(args):
             number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
 
             # set device id to node ranks
-            on_device  = node_rank % number_of_device_on_node            
-            # set device to use
+            device_id  = node_rank % number_of_device_on_node 
 
-            with cp.cuda.Device(on_device):
-                #print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(0)['name'] ,flush=True)
+            # setting device to use
+            with cp.cuda.Device(device_id):
+                # create global objects cuda event for measurment of time exe
+                # created after setting working device per MPI process 
+                # lazy implementation 
+                global start_gpu
+                global end_gpu
+
+                start_gpu = cp.cuda.Event()
+                end_gpu = cp.cuda.Event()
+                print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(device_id)['name'] ,flush=True)
                
                 if(args.mode == "GPU"):
                     batch_rank = rank + size * args.array_job_id

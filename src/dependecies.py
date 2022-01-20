@@ -22,10 +22,6 @@ cumulative_time_gemm_partial_trace = 0
 counter_gemm_local_gate = 0
 counter_gemm_partial_trace = 0
 
-# Create cuda events for 
-start_gpu = cp.cuda.Event()
-end_gpu = cp.cuda.Event()
-
 def tfim_LocalHamiltonian_new(lambdaa):
 
     """ Trasverse Ising Hamiltonian - Fabio/Marco """ 
@@ -459,6 +455,9 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
     global counter_gemm_local_gate
     global cumulative_time_prepare_apply_lg
 
+    start_gpu = cp.cuda.Event()
+    end_gpu = cp.cuda.Event()
+
     #print(cumulative_time_gemm_apply_lg)
     j = index_pair[0]
 
@@ -601,6 +600,9 @@ def PartialTraceGeneralTensor_new_GPU(N,index_list, A):
     global cumulative_time_gemm_partial_trace
     global counter_gemm_partial_trace
 
+    start_gpu = cp.cuda.Event()
+    end_gpu = cp.cuda.Event()
+
     # reshape the input vectors into tensors (here we exploit the fact that psi* is just the complex conjugate of psi )
     reshape_array_default = np.full(N,2)    
     A_initial = A.reshape(reshape_array_default)
@@ -725,6 +727,9 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
     global cumulative_time_gemm_apply_lg
     global counter_gemm_local_gate
 
+    start_gpu = cp.cuda.Event()
+    end_gpu = cp.cuda.Event()
+
 
     for batch_num in range(batch_size):
         j = index_pair[batch_num][0]
@@ -803,6 +808,9 @@ def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
 
     global cumulative_time_gemm_partial_trace
     global counter_gemm_partial_trace
+
+    start_gpu = cp.cuda.Event()
+    end_gpu = cp.cuda.Event()
     
     for batch_num in range(len_kk):
 
