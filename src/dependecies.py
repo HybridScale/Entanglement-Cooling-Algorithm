@@ -22,6 +22,8 @@ cumulative_time_gemm_partial_trace = 0
 counter_gemm_local_gate = 0
 counter_gemm_partial_trace = 0
 
+Streams = []
+
 def tfim_LocalHamiltonian_new(lambdaa):
 
     """ Trasverse Ising Hamiltonian - Fabio/Marco """ 
@@ -421,6 +423,13 @@ def Renyi2_aftergate_correct(N,R,psi,gate_id):
 
     return entropy,ee,relevant_list
 
+def set_streams_global( batch_size):
+    global Streams
+
+    for _ in range(batch_size):
+        Streams.append( cp.cuda.Stream())
+
+
 def create_sigma_list_GPU(dt):
 
     """ create a set of evolution gates in CUDA memory, accessed by GLOBAL list named gate_list_DEVICE"""
@@ -445,6 +454,7 @@ def create_sigma_list_GPU(dt):
     #global sigma_list_DEVICE 
     sigma_list_DEVICE = cp.asarray(sigma_list)
     return sigma_list_DEVICE
+
 
 @nvtx.annotate("ApplyLocalGate", color="blue")
 def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
@@ -725,18 +735,27 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
 
     #set global variables 
     global cumulative_time_gemm_apply_lg
+    global cumulative_time_prepare_apply_lg
     global counter_gemm_local_gate
+    global Streams
 
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
 
-
+    # Create reshape array for whole batched state 
+    # np.array(batch_size, 2, 2, .... N)   
+    reshape_array_default_batch = np.insert(np.full(N, d), 0, batch_size)
+    
+    #with nvtx.annotate("Apply_local_gate_batched_reshape", color="purple"):
+    
+    psi = psi.reshape( reshape_array_default_batch)
+    
     for batch_num in range(batch_size):
         j = index_pair[batch_num][0]
 
-        # reshape into a tensor with N legs, each leg with dimension d
-        reshape_array_default        = np.full(N,d)    
-        tmp_psi.append(psi[batch_num].reshape(reshape_array_default))
+        # Set streams for possible overlape of reshape and 
+        # transpose function on GPU
+        Streams[batch_num].use()
 
         if (j == N):
             # transpose the tensor with N legs to match the position of the local operator
@@ -751,8 +770,16 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
             transpose_array_default2[1]    = N-1
             transpose_array_default2[N-1]  = 0
 
-            tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default1).reshape(4,2**(N-2))
-            transpose_array_default_batch.append(transpose_array_default2)
+            # for now psi[batch_num].operation... instead of tmp_psi[batch_num].operation
+            start_gpu.record()
+
+            tmp_psi.append( psi[batch_num].transpose(transpose_array_default1).reshape(4,2**(N-2)) )
+            with nvtx.annotate("psi_1", color="purple"):
+                transpose_array_default_batch.append(transpose_array_default2)
+            
+            end_gpu.record()
+            end_gpu.synchronize()
+            cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
         elif(j == 2):
 
@@ -767,9 +794,18 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
             transpose_array_default2[0]    = 2
             transpose_array_default2[1]    = 0
             transpose_array_default2[2]    = 1
+            
+            # for now psi[batch_num].operation... instead of tmp_psi[batch_num].operation
+            start_gpu.record()
 
-            tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default1).reshape(4,2**(N-2))
+            with nvtx.annotate("psi_2", color="blue"):
+                tmp_psi.append( psi[batch_num].transpose(transpose_array_default1).reshape(4,2**(N-2)) )
+
             transpose_array_default_batch.append(transpose_array_default2)
+
+            end_gpu.record()
+            end_gpu.synchronize()
+            cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
         else:    
             # transpose the tensor with N legs to match the position of the local operator
@@ -778,12 +814,22 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
             transpose_array_default[1]    = j
             transpose_array_default[j-1]  = 0
             transpose_array_default[j]    = 1
+            
+            # for now psi[batch_num].operation... instead of tmp_psi[batch_num].operation
+            start_gpu.record()
 
-            tmp_psi[batch_num] = tmp_psi[batch_num].transpose(transpose_array_default).reshape(4,2**(N-2))
+            with nvtx.annotate("psi_3", color="blue"):
+                tmp_psi.append( psi[batch_num].transpose(transpose_array_default).reshape(4,2**(N-2)) )
+
             transpose_array_default_batch.append(transpose_array_default)
+
+            end_gpu.record()
+            end_gpu.synchronize()
+            cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
     
     start_gpu.record()
-    batched_psi = cp.matmul(sigmas, cp.array(tmp_psi))
+    with nvtx.annotate("batched_psi", color="purple"):
+        batched_psi = cp.matmul(sigmas, cp.array(tmp_psi))
 
     end_gpu.record()
     end_gpu.synchronize()
@@ -792,12 +838,17 @@ def ApplyLocalGate_GPU_batch(sigmas, batch_size, index_pair, psi, N, d, dt):
     #increment counter
     counter_gemm_local_gate +=1
 
+    batched_psi = batched_psi.reshape(reshape_array_default_batch)
+
     tmp_psi = []
-    
-    for Iter in range(batch_size):
-        tmp_psi.append(batched_psi[Iter].reshape(reshape_array_default).transpose(transpose_array_default_batch[batch_num]).reshape(2**N))
-    
-    return cp.array(tmp_psi)
+
+    for batch_num in range(batch_size):
+        Streams[batch_num].use()
+        tmp_psi.append(batched_psi[batch_num].transpose(transpose_array_default_batch[batch_num]))
+
+    tmp_psi = cp.array(tmp_psi).reshape(batch_size,2**N)
+
+    return tmp_psi
 
 @nvtx.annotate("PartialTraceGeneralTensor_batch", color="red")
 def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
@@ -812,7 +863,7 @@ def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
     
-    for batch_num in range(len_kk):
+    for kk_num in range(len_kk):
 
         # reshape the input vectors into tensors (here we exploit the fact that psi* is just the complex conjugate of psi )
         reshape_array_default = np.full(N,2)    
@@ -823,7 +874,7 @@ def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
         list_B = np.arange(N)
 
         # this changing the indeces by one is because of python stuff (the numbering starts from zero and not 1)
-        index_list_tmp = np.array(index_list[batch_num]) - 1
+        index_list_tmp = np.array(index_list[kk_num]) - 1
 
         A_temp = np.take(list_A, index_list_tmp)
         B_temp = np.take(list_B, index_list_tmp)
@@ -836,16 +887,18 @@ def PartialTraceGeneralTensor_new_GPU_batch(N, index_list, A, len_kk):
         B_DEVICE.append(A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list_tmp)),2**len(index_list_tmp)))
 
     # FINAL MULTIPLICATION
-    start_gpu.record()
-    out_DEVICE = (cp.array(A_DEVICE) @ cp.conjugate(cp.array(B_DEVICE)))
-    end_gpu.record()
-    end_gpu.synchronize()
-    cumulative_time_gemm_partial_trace += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
+    #start_gpu.record()
+    #out_DEVICE = (cp.array(A_DEVICE) @ cp.conjugate(cp.array(B_DEVICE)))
+    #end_gpu.record()
+    #end_gpu.synchronize()
+    #cumulative_time_gemm_partial_trace += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
     #increment counter
-    counter_gemm_partial_trace += 1
+    #counter_gemm_partial_trace += 1
 
-    return (out_DEVICE)
+    #return (out_DEVICE)
+    return A_DEVICE, B_DEVICE
+
 
 @nvtx.annotate("Renyi2_aftergate_correct_batch", color="purple")
 def Renyi2_aftergate_correct_GPU_batch(N,R,psi_DEVICE, batch_size, gate_id):
@@ -856,12 +909,23 @@ def Renyi2_aftergate_correct_GPU_batch(N,R,psi_DEVICE, batch_size, gate_id):
 
     # generating the indices that get traced out
     list_indic    = generate_dictionary_adjacent(N,R)
-    rho_reducedes = []
     relevant_list = []
+    A_batch = []
+    B_batch = []
 
+    global Streams
+    
+    global cumulative_time_gemm_partial_trace
+    global counter_gemm_partial_trace
+
+    
+    start_gpu = cp.cuda.Event()
+    end_gpu = cp.cuda.Event()
     
     for batch_num in range(batch_size):
         
+        Streams[batch_num].use()
+
         gate_id_tmp = gate_id[batch_num]
 
         kk = []
@@ -875,20 +939,25 @@ def Renyi2_aftergate_correct_GPU_batch(N,R,psi_DEVICE, batch_size, gate_id):
             if (list_indic[i][R-1] == gate_id_tmp[0]):
                 kk.append(list_indic[i])
                 relevant_list_tmp.append(i)
-                
+        
         relevant_list.append(relevant_list_tmp)
-        
-        rho_tmp = PartialTraceGeneralTensor_new_GPU_batch(N, kk, psi_DEVICE[batch_num], len(kk))
-        rho_reducedes.append( rho_tmp )
-        
-        
-    rho_reducedes = cp.array(rho_reducedes)    
-    rho_reduceds_product = (rho_reducedes * rho_reducedes.transpose(0,1,3,2)).sum(axis = (2,3))
+        A, B = PartialTraceGeneralTensor_new_GPU_batch(N, kk, psi_DEVICE[batch_num], len(kk))
+        A_batch.append(A)
+        B_batch.append(B)
+
+    A_batch = cp.array(A_batch)
+    B_batch = cp.conjugate(cp.array(B_batch))
+
+    start_gpu.record()
+    rho = A_batch @ B_batch
     
-    ee = (-cp.log( rho_reduceds_product)).real
-    entropy = np.average(ee, axis = 1)
+    end_gpu.record()
+    end_gpu.synchronize()
+    cumulative_time_gemm_partial_trace += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
+    
+    counter_gemm_partial_trace += 1
 
-        
-    return entropy, ee, relevant_list
-
-
+    ee = (-cp.log( ( (rho * rho.transpose(0,1,3,2)).sum([2,3]) ) )).real.reshape(batch_size,2)
+    entropy = cp.average(ee, 1)
+    
+    return cp.asnumpy(entropy), cp.asnumpy(ee), relevant_list

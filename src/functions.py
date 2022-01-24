@@ -106,7 +106,10 @@ def MC_Simulation_GPU(x, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, N
 
     
     state_DEVICE = cp.asarray(state)
+
+    # Create and return sigma gates on device (cupy array)
     sigma_list_device = dep.create_sigma_list_GPU(dt)
+    
     rand_sigma_value = len(sigma_list_device)
     
     for yy in range(MCsteps_old, MCsteps+1):
@@ -208,28 +211,39 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
         
         
     states = cp.asarray( states, dtype="complex_")
-    ee_list_old_list = cp.asarray( ee_list_old_list)
+    ee_list_old_list = np.asarray( ee_list_old_list)
     
     sigma_list_device = dep.create_sigma_list_GPU(dt)
     
     for yy in range(MCsteps_old, MCsteps+1):
         random_pairs, random_pair_ids = dep.select_cooling_evolution_indices_batch(loc_pairs, batch_size)
+
         random_sigma_gates = dep.select_sigma_gates_batch(sigma_list_device, batch_size)
 
         start_gpu.record()      
-        new_states = dep.ApplyLocalGate_GPU_batch(random_sigma_gates, batch_size ,random_pairs, states, Nsites, 2, dt)
+        new_states = dep.ApplyLocalGate_GPU_batch(random_sigma_gates, 
+                                                  batch_size ,
+                                                  random_pairs, 
+                                                  states, 
+                                                  Nsites, 
+                                                  2, 
+                                                  dt)
         end_gpu.record()
         end_gpu.synchronize()
         cumulative_time_apply_local_gate+= cp.cuda.get_elapsed_time(start_gpu, end_gpu)  
 
         start_gpu.record()      
-        ents_new, ees_list_new, relevant_partitions = dep.Renyi2_aftergate_correct_GPU_batch(Nsites, R, new_states, batch_size, random_pairs)
+        ents_new, ees_list_new, relevant_partitions = dep.Renyi2_aftergate_correct_GPU_batch(Nsites, 
+                                                                                             R, 
+                                                                                             new_states, 
+                                                                                             batch_size,
+                                                                                             random_pairs)
         end_gpu.record()
         end_gpu.synchronize()
         cumulative_time_renyi += cp.cuda.get_elapsed_time(start_gpu, end_gpu)  
-
+        
         ent_tamp = ee_list_old_list.copy()
-        for batch_num in range(batch_size):
+        for batch_num in range(batch_size):             
 
             ent_tamp[batch_num] [relevant_partitions[batch_num][0]] = ees_list_new[batch_num][0]
             ent_tamp[batch_num] [relevant_partitions[batch_num][1]] = ees_list_new[batch_num][1]
@@ -246,13 +260,14 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
             random_value = np.random.uniform(0,1)
             if (random_value <= min(1.0,p)):
                 accepted += 1
-                states[batch_num] = new_states[batch_num]#.copy()
-                ee_list_old_list[batch_num] = ent_tamp[batch_num]#.copy()
+                states[batch_num] = new_states[batch_num].copy()
+                ee_list_old_list[batch_num] = ent_tamp[batch_num].copy()
 
             if(yy == 1):
                 lista_y.append( np.average(ee_list_old_list[batch_num]))
             else:
                 lista_y[batch_num] = np.append(lista_y[batch_num], np.average(ee_list_old_list[batch_num]))
+                #print(np.average(ee_list_old_list[0]))
             
         if( yy %  print_exponent == 0 ):
             print("rank", x, 'MC step = %d' % yy)
@@ -262,8 +277,8 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
                 save_state_file_name = "state_{}".format(x*batch_size + batch_num)
                 f = open(str(states_dir)+"/"+str(save_state_file_name), "wb")
                 pickle.dump(states[batch_num].get(), f)
-                pickle.dump(ee_list_old_list[batch_num].get(), f)
-                pickle.dump(lista_y[batch_num].get(), f)
+                pickle.dump(ee_list_old_list[batch_num], f)
+                pickle.dump(lista_y[batch_num], f)
                 f.close()
             print("rank", x, "saved state on step", yy)
 
@@ -275,8 +290,10 @@ def MC_Simulation_GPU_batch(x, batch_size, MCsteps, MCsteps_old, loc_pairs , sta
     cumulative_time_renyi /= 1000
     dep.cumulative_time_gemm_apply_lg /= 1000
     dep.cumulative_time_gemm_partial_trace /= 1000
+    
+    #print(cp.asnumpy(lista_y))
             
-    return cp.asnumpy(cp.array(lista_y))
+    return cp.asnumpy(lista_y)
 
 def print_times(time_lg_max, time_renyi_max, total_time):
     print("######")
@@ -304,8 +321,7 @@ def print_times_csv_format(arguments, procedure_size, time_lg_max, time_renyi_ma
           time_renyi_max,
           dep.cumulative_time_gemm_partial_trace,
           dep.counter_gemm_partial_trace,
-          total_time , sep=", ")
-
+          total_time , sep =", ")
 
 def create_and_append_output():
     # Create file output.csv if does not already exists
@@ -328,10 +344,9 @@ def create_and_append_output():
               "Total_time, ",
                file=f)
         f.close()
-  
 
-def set_simulations(args):
-    # this dumb function doesn't work when in dependecies.py file so we put it here
+
+def set_simulations(args):      
     def doApplyHamClosed(psiIn):
         """ supplementary function  cast the Hamiltonian 'H' as a linear operator """
         return dep.doApplyHamTENSOR(psiIn, hloc, Nsites, usePBC)
@@ -377,6 +392,9 @@ def set_simulations(args):
 
     global cumulative_time_apply_local_gate
     global cumulative_time_renyi
+
+    global start_gpu
+    global end_gpu
 
     states_dir  = "saved_states_{}_{}_{}".format(Nsites, R, lambdaa)
     lista_y     = []
@@ -430,7 +448,9 @@ def set_simulations(args):
         list_pairs_local_ham = dep.generate_dictionary(Nsites,1, True)
         
         array_job_rank = rank + size * args.array_job_id
+        
         start = time.time()
+
         if( (args.mode == "GPU") or (args.mode == "batchedGEMM")):
             node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
             node_rank = node_comm.Get_rank()
@@ -442,22 +462,19 @@ def set_simulations(args):
 
             # setting device to use
             with cp.cuda.Device(device_id):
-                # create global objects cuda event for measurment of time exe
-                # created after setting working device per MPI process 
+                # Create global objects cuda event for measurment of time exe
+                # Created after setting working device per MPI process 
                 # lazy implementation 
-                global start_gpu
-                global end_gpu
 
                 start_gpu = cp.cuda.Event()
                 end_gpu = cp.cuda.Event()
                 print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(device_id)['name'] ,flush=True)
                
                 if(args.mode == "GPU"):
-                    batch_rank = rank + size * args.array_job_id
                     lista_y = MC_Simulation_GPU(array_job_rank, MCsteps, 1, list_pairs_local_ham, eigenvectors[:,0], ee_list, Nsites, dt, R, T_grid, lista_y)           
                
                 elif(args.mode == "batchedGEMM"):
-                    batch_rank = rank + size * args.array_job_id
+                    dep.set_streams_global(batch_size)
                     lista_y = MC_Simulation_GPU_batch(array_job_rank, batch_size, MCsteps, 1, list_pairs_local_ham, eigenvectors[:,0], ee_list, Nsites, dt, R, T_grid, lista_y)
            
                     #average by number of batch size
@@ -570,21 +587,26 @@ def set_simulations(args):
 
             print("rank ", rank, " loaded state : " , array_job_rank, "with steps: ", lista_y.shape[0], ", number of steps to continue: ", MCsteps_to_cont, flush=True)
 
-        list_pairs_local_ham = generate_dictionary(Nsites,1, True)
+        list_pairs_local_ham = dep.generate_dictionary(Nsites,1, True)
         start = time.time()
-        if( not args.mode == "CPU" ):
+        if( (args.mode == "GPU") or (args.mode == "batchedGEMM")):
             node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
             node_rank = node_comm.Get_rank()
             node_size = node_comm.Get_size()
             number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
 
             # set device id to node ranks
-            on_device  = node_rank % number_of_device_on_node   
+            device_id  = node_rank % number_of_device_on_node 
             
             # set device to use 
-            with cp.cuda.Device(on_device):
-                deviceProp = cp.cuda.runtime.getDeviceProperties(on_device);
-                print("node rank", node_rank, "Starting simulation on device", str(deviceProp['name']), "PCI BUS:", str(deviceProp['pciBusID']), "UUID:", deviceProp['uuid'], flush=True)
+            with cp.cuda.Device(device_id):
+                
+                dep.set_streams_global(batch_size)
+
+                start_gpu = cp.cuda.Event()
+                end_gpu = cp.cuda.Event()
+
+                print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(device_id)['name'] ,flush=True)
                
                 if(args.mode == "GPU"):
                     lista_y = MC_Simulation_GPU(array_job_rank, MCsteps, MCsteps_old, list_pairs_local_ham, eigenvectors, ee_list, Nsites, dt, R, T_grid, lista_y)           
@@ -612,7 +634,22 @@ def set_simulations(args):
         if (rank == 0):
             total_time = end - start
             print_times(cumulative_time_apply_local_gate, cumulative_time_renyi, total_time)
-            #print("time of exe", round(end-start,4), " s")
+
+            with open('output.csv', 'a') as f:
+                sys.stdout = f
+                
+                if (args.mode == "batchedGEMM"):
+                    procedure_size_per_mpi = args.bs
+
+                else:
+                    procedure_size_per_mpi = size
+
+                print_times_csv_format( args,
+                                        procedure_size_per_mpi,
+                                        cumulative_time_apply_local_gate,
+                                        cumulative_time_renyi,
+                                        total_time)
+
             save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
             pickle.dump(MC_data_final/size, save_file)
             save_file.close()
