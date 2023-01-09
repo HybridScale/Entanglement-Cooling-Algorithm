@@ -25,9 +25,9 @@ class Simulation:
         self.resume  = 1 if args.resume == "resume" else 0
         self.arrayID = args.array_job_id
 
-        print("wheter resume: ", self.resume)
         if (self.resume):
             self.configuration = self.__read_configuration( args.configfolder)
+            self.states_dir = args.configfolder 
             print(self.configuration)
         
         else:
@@ -45,6 +45,13 @@ class Simulation:
             self.eigen_filename_in = args.in_eigen
             self.mode              = args.mode
             self.save_eigen        = args.save_eigen
+
+            if (args.f == None):
+                self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
+                                                                  self.configuration["R"], 
+                                                                  self.configuration["lambda"])
+            else:
+                self.states_dir = args.f
         
         
         if (args.mode == "batchedGEMM"):
@@ -62,28 +69,35 @@ class Simulation:
         # defining a logaritmically decreasing temperature grid
         self.T_grid    = np.logspace(-4,-8, num=101,base=10)
 
-        sX, sY, sZ, sI = dep.PauliMatrice()
-
-        self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
-                                                          self.configuration["R"], 
-                                                          self.configuration["lambda"])
 
     def start(self):
-        Nsites = self.configuration["Nsites"]
-        R      = self.configuration["R"]
-
-        Path(self.states_dir).mkdir(exist_ok=True)
-        if(self.rank == 0):
-            self.__save_configuration()
-
+        Nsites   = self.configuration["Nsites"]
+        R        = self.configuration["R"]
         sim_rank = self.rank + self.size * self.arrayID
 
-        eigenvectors = self.__prepareEigenvectors(sim_rank)
+
+        if (self.resume):
+            state, ee, y, MCwanted, cc = self.__resume_read_states(sim_rank)
+            MCold = ee.size
+            print(MCold)
+
+        else:
+            Path(self.states_dir).mkdir(exist_ok=True)
+            if(self.rank == 0):
+                self.__save_configuration()
 
 
-        ent, ee_list = dep.Renyi2(self, Nsites, R, eigenvectors[:,0])
+            state = self.__prepareEigenvectors(sim_rank)
+
+            ent, ee = dep.Renyi2(Nsites, R, state)
     
-        list_pairs_local_ham = dep.generate_dictionary(Nsites, 1, True)
+            list_pairs_local_ham = dep.generate_dictionary(Nsites, 1, True)
+
+            y = np.empty(0)
+            MCold = 0
+            cc = 0
+
+        y = self.__MC_Simulation(sim_rank, cc, MCold, list_pairs_local_ham, state, y, ee)
 
 
     def __read_configuration(self, folder):
@@ -102,6 +116,7 @@ class Simulation:
 
         Nsites = self.configuration["Nsites"]
         R      = self.configuration["R"]
+        Lambda = self.configuration["lambda"]
 
         def doApplyHamClosed(psiIn):
             """ supplementary function  cast the Hamiltonian 'H' as a linear operator """
@@ -111,14 +126,10 @@ class Simulation:
             with open(self.eigen_filename_in, "rb") as f:
                 eigenvectors = pickle.load(f)
 
-        elif (self.resume):
-            with open(self.states_dir + f"/state_{sim_rank}", "rb") as f:
-                eigenvectors = pickle.load(f)
-            
         else:
             if(self.rank == 0):
                 print("Calculating initial eigenvectors")
-                hloc = dep.tfim_LocalHamiltonian_new(self.lambdaa)
+                hloc = dep.tfim_LocalHamiltonian_new(Lambda)
                 H = LinearOperator((2**Nsites, 2**Nsites), matvec=doApplyHamClosed)
                 eigenvalues, eigenvectors = eigsh(H, k=self.numval, which='SA',return_eigenvectors=True)
                 
@@ -134,7 +145,52 @@ class Simulation:
 
             eigenvectors = self.comm.bcast(eigenvectors, root=0)
 
-        return eigenvectors
+        return np.array(eigenvectors)
+
+
+    def __resume_read_states(self, sim_rank):
+        with open(self.states_dir + f"/state_{sim_rank}", "rb") as f:
+            state = pickle.load(f)
+            ee      = pickle.load( f)
+            y       = pickle.load( f)
+            MCwant  = pickle.load( f)
+            cc      = pickle.load( f)
+        
+        return state, ee, y, MCwant, cc
+
+
+    def __cudaDeviceID(self):
+            node_comm = self.comm.Split_type(MPI.COMM_TYPE_SHARED)
+            node_rank = node_comm.Get_rank()
+            node_size = node_comm.Get_size()
+            number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
+
+            # set device id to node ranks
+            device_id  = node_rank % number_of_device_on_node
+            return device_id
+
+
+    def __MC_Simulation(self, simID, cc, MCold, loc_pairs, state, y, ee):
+
+        MCsteps = self.configuration["MC"]
+    
+        MCsteps_exponent = round(np.log10(MCsteps-MCold))
+        if (MCsteps_exponent > 4):
+            print_exponent = int( 1000 )
+        elif (MCsteps_exponent <= 0):
+            print_exponent = 1  
+        else:
+            print_exponent = int( 10**(MCsteps_exponent-1) )  #Printf only 10 times which steps computing
+
+        if (self.mode == "CPU"):
+            print("if")
+        elif (self.mode == "GPU"):
+            deviceID = self.__cudaDeviceID()
+            with cp.cuda.Device(deviceID):
+                print("else")
+
+
+        return np.array(y)
 
 
 def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid, lista_y):

@@ -16,7 +16,9 @@ def exclusive_args(parser):
 def optional_args(parser):
     parser.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
     parser.add_argument("-w", "--MC_wanted", metavar="", help='MC steps wanted', type=int, default=0 )
-    parser.add_argument("--o", metavar="filename", help='Name of the file to write raw outputs, default Renyi_entropy_raw_N_R_L_MCsteps_M.bin', type=str, default="Renyi_entropy_raw_{}_{}_{}_{}_{}.bin")
+    parser.add_argument("--o", metavar="filename", help="Name of the file to write raw outputs, default Renyi_entropy_raw_N_R_L_MCsteps_M.bin", type=str, default="Renyi_entropy_raw_{}_{}_{}_{}_{}.bin")
+    parser.add_argument("-f", metavar="filename", help="Folder default saved_states_N_R_L", type=str, default=None)
+
 
 
 def resumesubparser(subparser):
@@ -25,7 +27,7 @@ def resumesubparser(subparser):
     resume = subsubparser.add_parser("resume", help="resume simulation")
     new    = subsubparser.add_parser("new", help="new simulation")
 
-    resume.add_argument('configfolder', metavar='filename', help="saved configuration folder")
+    resume.add_argument("configfolder", metavar="filename", help="saved configuration folder")
     resume.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
 
 
