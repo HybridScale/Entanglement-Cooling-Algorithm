@@ -22,21 +22,30 @@ class Simulation:
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
 
-        self.configuration = {
-            "Nsites"  : args.N,
-            "R"       : args.R,
-            "lambda"  : args.L,
-            "MC"      : args.MC,
-            "MCwanted": args.MC if args.MC_wanted == 0 else args.MC_wanted,
-            "sim_size": self.size
-        }
+        self.resume  = 1 if args.resume == "resume" else 0
+        self.arrayID = args.array_job_id
+
+        print("wheter resume: ", self.resume)
+        if (self.resume):
+            self.configuration = self.__read_configuration( args.configfolder)
+            print(self.configuration)
+        
+        else:
+            self.configuration = {
+                "Nsites"  : args.N,
+                "R"       : args.R,
+                "lambda"  : args.L,
+                "MC"      : args.MC,
+                "MCwanted": args.MC if args.MC_wanted == 0 else args.MC_wanted,
+                "sim_size": self.size,
+                "simfile" : args.o
+            }
     
-        self.filename          = args.o
-        self.eigen_filename_in = args.in_eigen
-        self.resume            = args.resume
-        self.mode              = args.mode
-        self.save_eigen        = args.save_eigen
-        self.arrayID           = args.array_job_id
+            self.filename          = args.o
+            self.eigen_filename_in = args.in_eigen
+            self.mode              = args.mode
+            self.save_eigen        = args.save_eigen
+        
         
         if (args.mode == "batchedGEMM"):
             self.batch_size = args.bs
@@ -60,18 +69,28 @@ class Simulation:
                                                           self.configuration["lambda"])
 
     def start(self):
+        Nsites = self.configuration["Nsites"]
+        R      = self.configuration["R"]
+
         Path(self.states_dir).mkdir(exist_ok=True)
-        if(self.rank = 0):     
+        if(self.rank == 0):
             self.__save_configuration()
 
         sim_rank = self.rank + self.size * self.arrayID
 
         eigenvectors = self.__prepareEigenvectors(sim_rank)
 
-        ent, ee_list = dep.Renyi2(self, self.Nsites, self.R, eigenvectors[:,0])
+
+        ent, ee_list = dep.Renyi2(self, Nsites, R, eigenvectors[:,0])
     
-        list_pairs_local_ham = dep.generate_dictionary(self.Nsites, 1, True)
+        list_pairs_local_ham = dep.generate_dictionary(Nsites, 1, True)
+
+
+    def __read_configuration(self, folder):
+        with open(folder + "/configuration", "rb") as f:
+            configuration = pickle.load(f)
         
+        return configuration
 
         
     def __save_configuration(self):
