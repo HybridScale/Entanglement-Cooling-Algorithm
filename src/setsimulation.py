@@ -51,6 +51,42 @@ class Simulation:
         sX, sY, sZ, sI = dep.PauliMatrice()
 
         self.states_dir  = "saved_states_{}_{}_{}".format(self.Nsites, self.R, self.lambdaa)
+
+    def start(self):
+        
+        eigenvectors = self.__prepareEigenvectors()
+
+
+    def __prepareEigenvectors(self):
+
+        def doApplyHamClosed(psiIn):
+            """ supplementary function  cast the Hamiltonian 'H' as a linear operator """
+            return dep.doApplyHamTENSOR(psiIn, hloc, self.Nsites, self.usePBC)
+
+        if (not self.resume and self.eigen_filename_in):
+            with open(self.eigen_filename_in, "rb") as f:
+                eigenvectors = pickle.load(f)
+            
+        else:
+            if(self.rank == 0):
+                print("Calculating initial eigenvectors")
+                hloc = dep.tfim_LocalHamiltonian_new(self.lambdaa)
+                H = LinearOperator((2**self.Nsites, 2**self.Nsites), matvec=doApplyHamClosed)
+                eigenvalues, eigenvectors = eigsh(H, k=self.numval, which='SA',return_eigenvectors=True)
+                
+                if(self.save_eigen):
+                    with open(f"eigenvecs_{self.Nsites}_{self.R}.bin", "wb") as file:
+                        pickle.dump(eigenvectors, file)
+                        print("Eigenstate saved in file", file.name)
+
+            else:
+                eigenvectors = np.empty(2**self.Nsites, dtype="float64")
+                
+            self.comm.Barrier()
+
+        eigenvectors = self.comm.bcast(eigenvectors, root=0)
+
+        return eigenvectors
         
 
 def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid, lista_y):
