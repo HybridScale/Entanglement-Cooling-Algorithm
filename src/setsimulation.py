@@ -11,6 +11,47 @@ import sys
 cumulative_time_apply_local_gate = 0
 cumulative_time_renyi            = 0
 
+class Simulation:
+
+    def __init__(self, args):
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.size = self.comm.Get_size()
+
+        self.Nsites = args.N
+        self.R = args.R
+        self.lambdaa = args.L
+        self.MCsteps = args.MC
+
+        self.MCsteps_wanted = args.MC if args.MC_wanted == 0 else args.MC_wanted
+        print("MCsteps_wanted", self.MCsteps_wanted)
+    
+        self.filename          = args.o
+        self.eigen_filename_in = args.in_eigen
+        self.resume            = args.resume
+        self.mode              = args.mode
+        self.save_eigen        = args.save_eigen
+        self.arrayID           = args.array_job_id
+        
+        if (args.mode == "batchedGEMM"):
+            self.batch_size = args.bs
+
+        # model parameters
+        # use periodic or open boundaries (we typically want PBC)
+        self.usePBC    = True   
+
+        # simulation parameters
+        # number of eigenstates to compute (we want ground state so =1 is what we want)
+        self.numval    = 1            
+        self.dt        = np.pi/10.0
+
+        # defining a logaritmically decreasing temperature grid
+        self.T_grid    = np.logspace(-4,-8, num=101,base=10)
+
+        sX, sY, sZ, sI = dep.PauliMatrice()
+
+        self.states_dir  = "saved_states_{}_{}_{}".format(self.Nsites, self.R, self.lambdaa)
+        
 
 def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid, lista_y):
     accepted = 0
