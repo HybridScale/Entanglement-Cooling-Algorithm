@@ -1,6 +1,10 @@
 import numpy as np
 import cupy as cp
 from mpi4py import MPI
+
+from pathlib import Path
+
+
 import pickle
 import os
 import dependecies as dep
@@ -18,13 +22,14 @@ class Simulation:
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
 
-        self.Nsites = args.N
-        self.R = args.R
-        self.lambdaa = args.L
-        self.MCsteps = args.MC
-
-        self.MCsteps_wanted = args.MC if args.MC_wanted == 0 else args.MC_wanted
-        print("MCsteps_wanted", self.MCsteps_wanted)
+        self.configuration = {
+            "Nsites"  : args.N,
+            "R"       : args.R,
+            "lambda"  : args.L,
+            "MC"      : args.MC,
+            "MCwanted": args.MC if args.MC_wanted == 0 else args.MC_wanted,
+            "sim_size": self.size
+        }
     
         self.filename          = args.o
         self.eigen_filename_in = args.in_eigen
@@ -50,44 +55,68 @@ class Simulation:
 
         sX, sY, sZ, sI = dep.PauliMatrice()
 
-        self.states_dir  = "saved_states_{}_{}_{}".format(self.Nsites, self.R, self.lambdaa)
+        self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
+                                                          self.configuration["R"], 
+                                                          self.configuration["lambda"])
 
     def start(self):
+        Path(self.states_dir).mkdir(exist_ok=True)
+        if(self.rank = 0):     
+            self.__save_configuration()
+
+        sim_rank = self.rank + self.size * self.arrayID
+
+        eigenvectors = self.__prepareEigenvectors(sim_rank)
+
+        ent, ee_list = dep.Renyi2(self, self.Nsites, self.R, eigenvectors[:,0])
+    
+        list_pairs_local_ham = dep.generate_dictionary(self.Nsites, 1, True)
         
-        eigenvectors = self.__prepareEigenvectors()
+
+        
+    def __save_configuration(self):
+        with open(self.states_dir + "/configuration", "wb") as f:
+            pickle.dump(self.configuration, f)
 
 
-    def __prepareEigenvectors(self):
+    def __prepareEigenvectors(self, sim_rank):
+
+        Nsites = self.configuration["Nsites"]
+        R      = self.configuration["R"]
 
         def doApplyHamClosed(psiIn):
             """ supplementary function  cast the Hamiltonian 'H' as a linear operator """
-            return dep.doApplyHamTENSOR(psiIn, hloc, self.Nsites, self.usePBC)
+            return dep.doApplyHamTENSOR(psiIn, hloc, Nsites, self.usePBC)
 
         if (not self.resume and self.eigen_filename_in):
             with open(self.eigen_filename_in, "rb") as f:
+                eigenvectors = pickle.load(f)
+
+        elif (self.resume):
+            with open(self.states_dir + f"/state_{sim_rank}", "rb") as f:
                 eigenvectors = pickle.load(f)
             
         else:
             if(self.rank == 0):
                 print("Calculating initial eigenvectors")
                 hloc = dep.tfim_LocalHamiltonian_new(self.lambdaa)
-                H = LinearOperator((2**self.Nsites, 2**self.Nsites), matvec=doApplyHamClosed)
+                H = LinearOperator((2**Nsites, 2**Nsites), matvec=doApplyHamClosed)
                 eigenvalues, eigenvectors = eigsh(H, k=self.numval, which='SA',return_eigenvectors=True)
                 
                 if(self.save_eigen):
-                    with open(f"eigenvecs_{self.Nsites}_{self.R}.bin", "wb") as file:
+                    with open(f"eigenvecs_{Nsites}_{R}.bin", "wb") as file:
                         pickle.dump(eigenvectors, file)
                         print("Eigenstate saved in file", file.name)
 
             else:
-                eigenvectors = np.empty(2**self.Nsites, dtype="float64")
+                eigenvectors = np.empty(2**Nsites, dtype="float64")
                 
             self.comm.Barrier()
 
-        eigenvectors = self.comm.bcast(eigenvectors, root=0)
+            eigenvectors = self.comm.bcast(eigenvectors, root=0)
 
         return eigenvectors
-        
+
 
 def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid, lista_y):
     accepted = 0
