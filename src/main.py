@@ -1,5 +1,5 @@
 import argparse
-from functions import set_simulations
+from setsimulation import set_simulations
 
 def required_args(parser):
     required = parser.add_argument_group('required arguments')
