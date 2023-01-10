@@ -5,6 +5,7 @@ pipelines:
   default:
     - step:
         name: 'Mirror to Github repo....'
+        image: alpine/git:latest
         script:
           - git push --mirror git@github.com:HybridScale/Entanglement-Cooling-Algorithm.git
 
