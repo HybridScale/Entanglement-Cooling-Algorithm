@@ -12,50 +12,91 @@ from scipy.sparse.linalg import LinearOperator, eigsh, eigs
 import time
 import sys
 
-cumulative_time_apply_local_gate = 0
-cumulative_time_renyi            = 0
-
 class Simulation:
 
+    from functions import CPUIteration, GPUIteration
+
     def __init__(self, args):
+
+        self.resume  = True if args.resume == "resume" else False
+
+        if(self.resume):
+            self.__resume_simulation(args)
+
+        else:
+            self.__new_simulation(args)
+
+
+    def __new_simulation(self, args):
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
 
-        self.resume  = 1 if args.resume == "resume" else 0
         self.arrayID = args.array_job_id
 
-        if (self.resume):
-            self.configuration = self.__read_configuration( args.configfolder)
-            self.states_dir = args.configfolder 
-            print(self.configuration)
-        
-        else:
-            self.configuration = {
-                "Nsites"  : args.N,
-                "R"       : args.R,
-                "lambda"  : args.L,
-                "MC"      : args.MC,
-                "MCwanted": args.MC if args.MC_wanted == 0 else args.MC_wanted,
-                "sim_size": self.size,
-                "simfile" : args.o
-            }
-    
-            self.filename          = args.o
-            self.eigen_filename_in = args.in_eigen
-            self.mode              = args.mode
-            self.save_eigen        = args.save_eigen
+        simulation_file = f"Renyi_entropy_raw_{args.N}_{args.R}_{args.L}_{args.MC}_{self.size}.bin"
 
-            if (args.f == None):
-                self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
-                                                                  self.configuration["R"], 
-                                                                  self.configuration["lambda"])
-            else:
-                self.states_dir = args.f
+        self.configuration = {
+            "Nsites"  : args.N,
+            "R"       : args.R,
+            "lambda"  : args.L,
+            "MCwanted": args.MC if args.MC_wanted == 0 else args.MC_wanted,
+            "sim_size": self.size,
+            "simfile" : simulation_file if args.o == None else args.o
+        }
+
+        #self.filename          = args.o
+        self.MC                = args.MC
+        self.eigen_filename_in = args.in_eigen
+        self.mode              = args.mode
+        self.save_eigen        = args.save_eigen
+
+        if (args.f == None):
+            self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
+                                                              self.configuration["R"], 
+                                                              self.configuration["lambda"])
+        else:
+            self.states_dir = args.f
         
-        
+    
         if (args.mode == "batchedGEMM"):
             self.batch_size = args.bs
+
+        # model parameters
+        # use periodic or open boundaries (we typically want PBC)
+        self.usePBC    = True   
+
+        # simulation parameters
+        # number of eigenstates to compute (we want ground state so =1 is what we want)
+        self.numval    = 1            
+        self.dt        = np.pi/10.0
+
+        # defining a logaritmically decreasing temperature grid
+        self.T_grid    = np.logspace(-4,-8, num=101,base=10)
+
+        self.__print_config(self.configuration)
+
+        Path(self.states_dir).mkdir(exist_ok=True)
+        if(self.rank == 0):
+            self.__save_configuration()
+
+
+    def __resume_simulation(self, args):
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.size = self.comm.Get_size()
+
+        self.configuration = self.__read_configuration( args.savedfolder)
+        
+        self.states_dir = args.savedfolder
+
+        self.__print_config(self.configuration)
+        self.__check_mpi_size()
+
+        self.arrayID = args.array_job_id
+
+        self.mode      = args.mode
+        self.MC        = args.MC
 
         # model parameters
         # use periodic or open boundaries (we typically want PBC)
@@ -73,31 +114,49 @@ class Simulation:
     def start(self):
         Nsites   = self.configuration["Nsites"]
         R        = self.configuration["R"]
+        MCwanted = self.configuration["MCwanted"]
         sim_rank = self.rank + self.size * self.arrayID
 
 
         if (self.resume):
-            state, ee, y, MCwanted, cc = self.__resume_read_states(sim_rank)
-            MCold = ee.size
-            print(MCold)
+            state, ee, y, cc = self.__resume_read_states(sim_rank)
+            MCold = y.size + 1
+
+            MCwanted = self.configuration["MCwanted"]
+            self.MC = MCwanted if self.MC == None else self.MC + MCold
 
         else:
-            Path(self.states_dir).mkdir(exist_ok=True)
-            if(self.rank == 0):
-                self.__save_configuration()
-
-
             state = self.__prepareEigenvectors(sim_rank)
 
             ent, ee = dep.Renyi2(Nsites, R, state)
     
-            list_pairs_local_ham = dep.generate_dictionary(Nsites, 1, True)
-
             y = np.empty(0)
-            MCold = 0
+            MCold = 1
             cc = 0
 
+        list_pairs_local_ham = dep.generate_dictionary(Nsites, 1, True)
+
         y = self.__MC_Simulation(sim_rank, cc, MCold, list_pairs_local_ham, state, y, ee)
+
+    def __check_mpi_size(self):
+        MPIsize       =  self.size
+        MPIresumeSize = self.configuration["sim_size"]
+        if ( MPIresumeSize != MPIsize):
+            if (self.rank == 0):
+                print(f"invalid number of MPI ranks!! Simulation started with {MPIsize} ranks instead of {MPIresumeSize}.")
+            sys.exit()
+
+        
+    def __print_config(self, config):
+        if(self.rank == 0):
+            max_size = len(config["simfile"]) + 12
+            print(f'{"Configuration:":-^{max_size }}')
+            for key in config:
+                print(f'|{key:<10}{config[key]:{max_size - 12}}|')
+
+            print(f'{"":-^{max_size}}')
+        
+        self.comm.Barrier()
 
 
     def __read_configuration(self, folder):
@@ -153,10 +212,9 @@ class Simulation:
             state = pickle.load(f)
             ee      = pickle.load( f)
             y       = pickle.load( f)
-            MCwant  = pickle.load( f)
             cc      = pickle.load( f)
         
-        return state, ee, y, MCwant, cc
+        return state, ee, y, cc
 
 
     def __cudaDeviceID(self):
@@ -172,7 +230,8 @@ class Simulation:
 
     def __MC_Simulation(self, simID, cc, MCold, loc_pairs, state, y, ee):
 
-        MCsteps = self.configuration["MC"]
+        MCsteps = self.MC
+        #print(MCsteps)
     
         MCsteps_exponent = round(np.log10(MCsteps-MCold))
         if (MCsteps_exponent > 4):
@@ -183,12 +242,11 @@ class Simulation:
             print_exponent = int( 10**(MCsteps_exponent-1) )  #Printf only 10 times which steps computing
 
         if (self.mode == "CPU"):
-            print("if")
+            y, accepted = self.CPUIteration(simID, cc, MCold, print_exponent, loc_pairs, state, y, ee )
         elif (self.mode == "GPU"):
             deviceID = self.__cudaDeviceID()
             with cp.cuda.Device(deviceID):
-                print("else")
-
+                y, accepted = self.GPUIteration(simID, cc, MCold, print_exponent, loc_pairs, state, y, ee)
 
         return np.array(y)
 

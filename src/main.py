@@ -1,5 +1,5 @@
 import argparse
-from setsimulation import set_simulations, Simulation
+from setsimulation import Simulation
 
 def required_args(parser):
     required = parser.add_argument_group('required arguments')
@@ -16,10 +16,8 @@ def exclusive_args(parser):
 def optional_args(parser):
     parser.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
     parser.add_argument("-w", "--MC_wanted", metavar="", help='MC steps wanted', type=int, default=0 )
-    parser.add_argument("--o", metavar="filename", help="Name of the file to write raw outputs, default Renyi_entropy_raw_N_R_L_MCsteps_M.bin", type=str, default="Renyi_entropy_raw_{}_{}_{}_{}_{}.bin")
+    parser.add_argument("--o", metavar="filename", help="Name of the file to write raw outputs, default Renyi_entropy_raw_N_R_L_MCsteps_MPI.bin", type=str, default=None)
     parser.add_argument("-f", metavar="filename", help="Folder default saved_states_N_R_L", type=str, default=None)
-
-
 
 def resumesubparser(subparser):
     subsubparser = subparser.add_subparsers(title="Resume simulation or begin anew", required=True, dest="resume")
@@ -27,9 +25,9 @@ def resumesubparser(subparser):
     resume = subsubparser.add_parser("resume", help="resume simulation")
     new    = subsubparser.add_parser("new", help="new simulation")
 
-    resume.add_argument("configfolder", metavar="filename", help="saved configuration folder")
+    resume.add_argument("savedfolder", metavar="filename", help="saved configuration folder")
     resume.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
-
+    resume.add_argument("--MC", metavar="MCsteps", help='Number of Monte Carlo steps', type=int, default=None)
 
     return resume, new
 
@@ -68,7 +66,6 @@ if __name__ == "__main__":
     #handle_batchGEMM_args(subparser)
 
     args = parser.parse_args()
-    print(args)
     simulation = Simulation(args)
     simulation.start()
 
