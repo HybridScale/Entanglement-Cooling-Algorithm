@@ -1,9 +1,8 @@
 import numpy as np
 import cupy as cp
-from mpi4py import MPI
 
 from pathlib import Path
-
+from mpi4py import MPI
 
 import pickle
 import os
@@ -12,6 +11,7 @@ from scipy.sparse.linalg import LinearOperator, eigsh, eigs
 import time
 import sys
 
+
 class Simulation:
 
     from functions import CPUIteration, GPUIteration
@@ -19,6 +19,8 @@ class Simulation:
     def __init__(self, args):
 
         self.resume  = True if args.resume == "resume" else False
+
+        dep.timing.set_mode(args.mode, args.timeit)
 
         if(self.resume):
             self.__resume_simulation(args)
@@ -136,7 +138,14 @@ class Simulation:
 
         list_pairs_local_ham = dep.generate_dictionary(Nsites, 1, True)
 
+        dep.timing.Start("TotalTime")
         y = self.__MC_Simulation(sim_rank, cc, MCold, list_pairs_local_ham, state, y, ee)
+        dep.timing.Stop("TotalTime")
+
+        self.comm.Barrier()
+
+        if(self.rank == 0):
+            print(dep.timing)
 
     def __check_mpi_size(self):
         MPIsize       =  self.size
@@ -149,12 +158,15 @@ class Simulation:
         
     def __print_config(self, config):
         if(self.rank == 0):
-            max_size = len(config["simfile"]) + 12
-            print(f'{"Configuration:":-^{max_size }}')
+            max_length = 0
             for key in config:
-                print(f'|{key:<10}{config[key]:{max_size - 12}}|')
+                current_length = len( str(config[key])) + 12 
+                max_length = current_length if current_length > max_length else max_length
+            print(f'{"Configuration:":-^{max_length }}')
+            for key in config:
+                print(f'|{key:<10}{config[key]:>{max_length - 12}}|')
 
-            print(f'{"":-^{max_size}}')
+            print(f'{"":-^{max_length}}')
         
         self.comm.Barrier()
 

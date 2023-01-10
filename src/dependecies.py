@@ -1,6 +1,8 @@
 # needed libraries
 import numpy as np
 import cupy as cp
+from mpi4py import MPI
+
 from scipy.integrate import quad
 import cmath
 from collections import OrderedDict
@@ -13,16 +15,57 @@ import time
 import nvtx
 import socket
 
-cumulative_time = 0
-cumulative_time_gemm_apply_lg = 0
-cumulative_time_prepare_apply_lg = 0
-cumulative_time_gemm_partial_trace = 0
 
-#counters for number of code executed
-counter_gemm_local_gate = 0
-counter_gemm_partial_trace = 0
+class Timing:
+    __dict = {"TotalTime": [],
+              "ApplyLocalGate" : [],
+              "RenyEntropy": [],
+              "PartialTrace": []}
 
+    def set_mode(self, mode, timeit):
+        self.mode = mode
+        self.timeit  = timeit
+
+
+    def Start(self, timeName):
+        if (self.timeit):
+            if (not self.mode == "CPU"):
+                start_gpu = cp.cuda.Event()
+                start_gpu.record()
+                self.__dict[timeName].append(start_gpu)
+                
+            else:
+                self.__dict[timeName].append(MPI.Wtime())
+
+
+    def Stop(self, timeName):
+        if(self.timeit):
+            if (not self.mode == "CPU"):
+                end_gpu = cp.cuda.Event()
+                end_gpu.record()
+                end_gpu.synchronize()
+                self.__dict[timeName][-1] = cp.cuda.get_elapsed_time(self.__dict[timeName][-1], end_gpu)/1000
+            else:
+                self.__dict[timeName][-1] = MPI.Wtime()- self.__dict[timeName][-1]
+
+    def __str__(self):
+        for key in self.__dict.keys():
+            self.__dict[key] = np.sum(self.__dict[key])
+
+        if(self.timeit):
+            return (f'\n{"Timing:":-^30}\n'
+                    f'|{"total time:":<20s}{self.__dict["TotalTime"]:8.2f}|\n'
+                    f'|{"apply local gate:":<20s}{self.__dict["ApplyLocalGate"]:8.2f}|\n'
+                    f'|{"renyi2 entropy:":<20s}{self.__dict["RenyEntropy"]:8.2f}|\n'
+                    f'|{"partial trace:":<20s}{self.__dict["PartialTrace"]:8.2f}|\n'
+                    f'{"":-^30}')
+        else:
+            return "Timing not on"
+
+#### GLOBALS #####
+timing  = Timing()
 Streams = []
+##################
 
 def tfim_LocalHamiltonian_new(lambdaa):
 
@@ -63,9 +106,6 @@ def tfim_LocalHamiltonian_new(lambdaa):
 
 def PartialTraceGeneralTensor(N,index_list,A):
     """ Function that computes the partial trace over index_list indices (the index list needs to be ordered from smaller to bigger index)"""
-
-    global cumulative_time_gemm_partial_trace
-    global counter_gemm_partial_trace
 
     # reshape the input vectors into tensors (here we exploit the fact that psi* is just the complex conjugate of psi )
     reshape_array_default = np.full(N,2)    
@@ -132,12 +172,9 @@ def PartialTraceGeneralTensor(N,index_list,A):
     B = A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list)),2**len(index_list))
 
     # FINAL MULTIPLICATION
-    start = time.time()
-    
+    timing.Start("PartialTrace")
     out = (A @ np.conjugate(B))
-    
-    cumulative_time_gemm_partial_trace += time.time() - start
-    counter_gemm_partial_trace += 1
+    timing.Stop("PartialTrace")
 
     return out
 
@@ -232,10 +269,6 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
 
     j = index_pair[0]
 
-    #set global variables 
-    global cumulative_time_gemm_apply_lg
-    global counter_gemm_local_gate
-
    # reshape into a tensor with N legs, each leg with dimension d
     reshape_array_default         = np.full(N,d)    
     psi = psi.reshape(reshape_array_default)
@@ -253,13 +286,8 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = N-1
         transpose_array_default2[N-1]  = 0
 
-        start = time.time()
 
         psi = (sigma.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
-
-        cumulative_time_gemm_apply_lg += time.time() - start
-        counter_gemm_local_gate += 1
-
 
     elif(j == 2):
 
@@ -275,12 +303,7 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
         transpose_array_default2[1]    = 0
         transpose_array_default2[2]    = 1
 
-        start = time.time()
-
         psi = (sigma.reshape(4,4) @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
-
-        cumulative_time_gemm_apply_lg += time.time() - start
-        counter_gemm_local_gate += 1
 
     else:    
         # transpose the tensor with N legs to match the position of the local operator
@@ -290,13 +313,8 @@ def ApplyLocalGate(sigma,index_pair,psi,N,d,dt):
         transpose_array_default[j-1]  = 0
         transpose_array_default[j]    = 1
 
-        start = time.time()
-
         psi = (sigma.reshape(4,4) @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
 
-        end = time.time()
-        cumulative_time_gemm_apply_lg += (end - start)
-        counter_gemm_local_gate += 1
 
     return psi
 
@@ -460,14 +478,6 @@ def create_sigma_list_GPU(dt):
 def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
     """ apply exponentiated local 2 site gate, this is generalized to any distance pair but does not involve pairs that are there due to PBC"""
 
-    #set global variables 
-    global cumulative_time_gemm_apply_lg
-    global counter_gemm_local_gate
-    global cumulative_time_prepare_apply_lg
-
-    start_gpu = cp.cuda.Event()
-    end_gpu = cp.cuda.Event()
-
     #print(cumulative_time_gemm_apply_lg)
     j = index_pair[0]
 
@@ -490,36 +500,14 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
 
         #psi = (sigma_DEVICE @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
         
-        # Prepare tensor for gemm operation
-        start_gpu.record()
-        
+        # Prepare tensor for gemm operation      
         psi = psi.transpose(transpose_array_default1).reshape(4,2**(N-2))
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-
-        # Gemm operation 
-        start_gpu.record()
 
         psi = sigma_DEVICE @ psi
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-        counter_gemm_local_gate += 1
-
-        # Transpose and rashape bach to origininal shape tensor
-        start_gpu.record()
 
         psi = psi.reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
     elif(j == 2):
-
         # transpose the tensor with N legs to match the position of the local operator
         transpose_array_default1       = np.arange(N)
         transpose_array_default2       = transpose_array_default1.copy()
@@ -534,33 +522,14 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
 
         #psi = (sigma_DEVICE @ psi.transpose(transpose_array_default1).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
 
-        # Prepare tensor for gemm operation
-        start_gpu.record()
-        
+        # Prepare tensor for gemm operation        
         psi = psi.transpose(transpose_array_default1).reshape(4,2**(N-2))
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
         # Gemm operation 
-        start_gpu.record()
-
         psi = sigma_DEVICE @ psi
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-        counter_gemm_local_gate += 1
 
         # Transpose and rashape bach to origininal shape tensor
-        start_gpu.record()
-
         psi = psi.reshape(reshape_array_default).transpose(transpose_array_default2).reshape(2**N)
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
       
     else:    
         # transpose the tensor with N legs to match the position of the local operator
@@ -572,34 +541,15 @@ def ApplyLocalGate_GPU(sigma_DEVICE,index_pair,psi,N,d,dt):
 
         #psi = (sigma_DEVICE @ psi.transpose(transpose_array_default).reshape(4,2**(N-2))).reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
 
-        # Prepare tensor for gemm operation
-        start_gpu.record()
-        
+        # Prepare tensor for gemm operation        
         psi = psi.transpose(transpose_array_default).reshape(4,2**(N-2))
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
 
         # Gemm operation 
-        start_gpu.record()
-
         psi = sigma_DEVICE @ psi
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_gemm_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-        counter_gemm_local_gate += 1
 
         # Transpose and rashape bach to origininal shape tensor
-        start_gpu.record()
 
         psi = psi.reshape(reshape_array_default).transpose(transpose_array_default).reshape(2**N)
-        
-        end_gpu.record()
-        end_gpu.synchronize()
-        cumulative_time_prepare_apply_lg += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-
 
     return psi
 
@@ -635,16 +585,9 @@ def PartialTraceGeneralTensor_new_GPU(N,index_list, A):
     B_DEVICE = A_initial.transpose(transpose2_B).reshape(2**(N - len(index_list)),2**len(index_list))
 
     # FINAL MULTIPLICATION
-
-    start_gpu.record()
-
+    timing.Start("PartialTrace")
     out_DEVICE = (A_DEVICE @ cp.conjugate(B_DEVICE))
-    
-    end_gpu.record()
-    end_gpu.synchronize()
-    
-    cumulative_time_gemm_partial_trace += cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-    counter_gemm_partial_trace += 1
+    timing.Stop("PartialTrace")
     
     return (out_DEVICE)
 

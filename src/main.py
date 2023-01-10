@@ -18,8 +18,10 @@ def optional_args(parser):
     parser.add_argument("-w", "--MC_wanted", metavar="", help='MC steps wanted', type=int, default=0 )
     parser.add_argument("--o", metavar="filename", help="Name of the file to write raw outputs, default Renyi_entropy_raw_N_R_L_MCsteps_MPI.bin", type=str, default=None)
     parser.add_argument("-f", metavar="filename", help="Folder default saved_states_N_R_L", type=str, default=None)
+    parser.add_argument("--timeit", help="Timing of functions", action="store_true", default=False)
 
-def resumesubparser(subparser):
+
+def subsubparser_create(subparser):
     subsubparser = subparser.add_subparsers(title="Resume simulation or begin anew", required=True, dest="resume")
 
     resume = subsubparser.add_parser("resume", help="resume simulation")
@@ -28,6 +30,7 @@ def resumesubparser(subparser):
     resume.add_argument("savedfolder", metavar="filename", help="saved configuration folder")
     resume.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
     resume.add_argument("--MC", metavar="MCsteps", help='Number of Monte Carlo steps', type=int, default=None)
+    resume.add_argument("--timeit", help="Timing of functions", action="store_true", default=False)
 
     return resume, new
 
@@ -35,7 +38,7 @@ def resumesubparser(subparser):
 def handle_GPU_args(subparser):
     parserGPU = subparser.add_parser("GPU", help="GPU MPI version")
 
-    GPUresume, GPUnew = resumesubparser(parserGPU)
+    GPUresume, GPUnew = subsubparser_create(parserGPU)
     required_args(GPUnew)
     exclusive_args(GPUnew)
     optional_args(GPUnew)
@@ -43,7 +46,7 @@ def handle_GPU_args(subparser):
 def handle_CPU_args(subparser):
     parserCPU = subparser.add_parser("CPU", help="CPU MPI version")
 
-    CPUresume, CPUnew = resumesubparser(parserCPU)
+    CPUresume, CPUnew = subsubparser_create(parserCPU)
     required_args(CPUnew)
     exclusive_args(CPUnew)
     optional_args(CPUnew)

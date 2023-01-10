@@ -8,8 +8,7 @@ from scipy.sparse.linalg import LinearOperator, eigsh, eigs
 import time
 import sys
 
-cumulative_time_apply_local_gate = 0
-cumulative_time_renyi            = 0
+
 
 def CPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state, y, ee_list_old):
     accepted = 0
@@ -27,10 +26,14 @@ def CPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state,
         random_pair, random_pair_id = dep.select_cooling_evolution_indices(loc_pairs)
         random_gate, random_gate_id = dep.select_cooling_evolution_gates()
 
+        dep.timing.Start("ApplyLocalGate")
         new_state = dep.ApplyLocalGate(random_gate,random_pair,state, Nsites, 2, dt)
+        dep.timing.Stop("ApplyLocalGate")
 
+        dep.timing.Start("RenyEntropy")
         ent_new, ee_list_new, relevant_partitions = dep.Renyi2_aftergate_correct(Nsites, R, \
                                                                                  new_state,random_pair)
+        dep.timing.Stop("RenyEntropy")
 
         ent_tamp = ee_list_old.copy()
 
@@ -95,12 +98,15 @@ def GPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state,
         random_pair, random_pair_id = dep.select_cooling_evolution_indices(loc_pairs)
         random_sigma_gate = sigma_list_device[np.random.randint(rand_sigma_value)]
 
-        
+        dep.timing.Start("ApplyLocalGate")
         new_state_DEVICE = dep.ApplyLocalGate_GPU(random_sigma_gate, random_pair, state_DEVICE, \
                                                   Nsites, 2, dt)
+        dep.timing.Stop("ApplyLocalGate")
 
+        dep.timing.Start("RenyEntropy")
         ent_new_DEVICE, ee_list_new_DEVICE, relevant_partitions = dep.Renyi2_aftergate_correct_GPU(Nsites, R, \
                                                                                                    new_state_DEVICE,random_pair)
+        dep.timing.Stop("RenyEntropy")
         
         ent_new = cp.asnumpy(ent_new_DEVICE)
         ee_list_new = cp.asnumpy(ee_list_new_DEVICE)
