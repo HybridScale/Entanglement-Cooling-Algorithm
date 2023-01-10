@@ -1,14 +1,3 @@
-#clone:
-#  depth: full
-
-#pipelines:
-#  default:
-#    - step:
-#        name: 'Mirror to Github repo....'
-#        image: alpine/git:latest
-#        script:
-#          - git push --mirror git@github.com:HybridScale/Entanglement-Cooling-Algorithm.git
-
 pipelines:
   default:
     - step:
@@ -20,5 +9,4 @@ pipelines:
           - git clone --branch="master" --bare git@bitbucket.org:davordavidovic/batched-gemm-montecarlo.git
           - cd batched-gemm-montecarlo.git
           - git config push.default upstream
-#          - git push --mirror git@github.com:HybridScale/Entanglement-Cooling-Algorithm.git
           - git push git@github.com:HybridScale/Entanglement-Cooling-Algorithm.git master
