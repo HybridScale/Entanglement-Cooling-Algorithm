@@ -14,7 +14,6 @@ def exclusive_args(parser):
     group.add_argument("--save_eigen", help='Calculate initial eigenvetors and eigenstate', action='store_true', default=False)
 
 def optional_args(parser):
-    parser.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
     parser.add_argument("-w", "--MC_wanted", metavar="", help='MC steps wanted', type=int, default=0 )
     parser.add_argument("--o", metavar="filename", help="Name of the file to write raw outputs, default Renyi_entropy_raw_N_R_L_MCsteps_MPI.bin", type=str, default=None)
     parser.add_argument("-f", metavar="filename", help="Folder default saved_states_N_R_L", type=str, default=None)
@@ -28,7 +27,6 @@ def subsubparser_create(subparser):
     new    = subsubparser.add_parser("new", help="new simulation")
 
     resume.add_argument("savedfolder", metavar="filename", help="saved configuration folder")
-    resume.add_argument("-a", "--array_job_id", metavar="", help='array job id parameter', type=int, default=0 )
     resume.add_argument("--MC", metavar="MCsteps", help='Number of Monte Carlo steps', type=int, default=None)
     resume.add_argument("--timeit", help="Timing of functions", action="store_true", default=False)
 
@@ -54,10 +52,13 @@ def handle_CPU_args(subparser):
 
 def handle_batchGEMM_args(subparser):
     parserBG = subparser.add_parser("batchedGEMM", help="GPU batchedGEMM version")
-    requred_options = required_args(parserBG)
-    exclusive_args(parserBG)
-    optional_args(parserBG)
-    #requred_options.add_argument("--bs", metavar="batch_size", help='Number of Monte Carlo conncurent on single GPU', required=True, type=int, default=1)
+    
+    batchGEMMresume, batchGEMMnew = subsubparser_create(parserBG)
+    
+    required_args(batchGEMMnew)
+    exclusive_args(batchGEMMnew)
+    optional_args(batchGEMMnew)
+    batchGEMMnew.add_argument("--bs", metavar="batch_size", help='Number of Monte Carlo conncurent on single GPU', required=True, type=int, default=1)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='MPI version of computing the Renyi2 entropy by Monte Carlo simulations')
@@ -66,7 +67,7 @@ if __name__ == "__main__":
     ## functions to handle subparser and it's msg
     handle_GPU_args(subparser)
     handle_CPU_args(subparser)
-    #handle_batchGEMM_args(subparser)
+    handle_batchGEMM_args(subparser)
 
     args = parser.parse_args()
     simulation = Simulation(args)

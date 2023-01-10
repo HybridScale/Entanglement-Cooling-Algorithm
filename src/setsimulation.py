@@ -14,7 +14,7 @@ import sys
 
 class Simulation:
 
-    from functions import CPUIteration, GPUIteration
+    from functions import CPUIteration, GPUIteration, batchGEMMIteration
 
     def __init__(self, args):
 
@@ -33,8 +33,6 @@ class Simulation:
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
-
-        self.arrayID = args.array_job_id
 
         simulation_file = f"Renyi_entropy_raw_{args.N}_{args.R}_{args.L}_{args.MC}_{self.size}.bin"
 
@@ -95,8 +93,6 @@ class Simulation:
         self.__print_config(self.configuration)
         self.__check_mpi_size()
 
-        self.arrayID = args.array_job_id
-
         self.mode      = args.mode
         self.MC        = args.MC
 
@@ -117,7 +113,7 @@ class Simulation:
         Nsites   = self.configuration["Nsites"]
         R        = self.configuration["R"]
         MCwanted = self.configuration["MCwanted"]
-        sim_rank = self.rank + self.size * self.arrayID
+        sim_rank = self.rank
 
 
         if (self.resume):
@@ -203,6 +199,7 @@ class Simulation:
                 hloc = dep.tfim_LocalHamiltonian_new(Lambda)
                 H = LinearOperator((2**Nsites, 2**Nsites), matvec=doApplyHamClosed)
                 eigenvalues, eigenvectors = eigsh(H, k=self.numval, which='SA',return_eigenvectors=True)
+                eigenvectors = eigenvectors[:, 0]
                 
                 if(self.save_eigen):
                     with open(f"eigenvecs_{Nsites}_{R}.bin", "wb") as file:
@@ -243,7 +240,6 @@ class Simulation:
     def __MC_Simulation(self, simID, cc, MCold, loc_pairs, state, y, ee):
 
         MCsteps = self.MC
-        #print(MCsteps)
     
         MCsteps_exponent = round(np.log10(MCsteps-MCold))
         if (MCsteps_exponent > 4):
@@ -259,5 +255,10 @@ class Simulation:
             deviceID = self.__cudaDeviceID()
             with cp.cuda.Device(deviceID):
                 y, accepted = self.GPUIteration(simID, cc, MCold, print_exponent, loc_pairs, state, y, ee)
+        elif (self.mode == "batchedGEMM"):
+            deviceID = self.__cudaDeviceID()
+            with cp.cuda.Device(deviceID):
+                y = self.batchGEMMIteration(simID, cc, MCold, print_exponent, loc_pairs, state, y, ee)
+
 
         return np.array(y)

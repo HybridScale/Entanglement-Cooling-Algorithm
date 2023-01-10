@@ -149,3 +149,86 @@ def GPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state,
             print(f"rank {simID} saved state on step {step}")
    
     return cp.asnumpy(y), accepted
+
+
+def batchGEMMIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs , state, y, ee_list_old):
+    accepted = 0
+
+    MCsteps        = self.MC
+    MCsteps_wanted = self.configuration["MCwanted"]
+    batch_size     = self.batch_size
+
+    Nsites = self.configuration["Nsites"]
+    R      = self.configuration["R"]
+    Lambda = self.configuration["lambda"]
+    dt     = self.dt
+    T_grid = self.T_grid
+
+    state       = cp.tile(state, (batch_size, 1))
+    ee_list_old = cp.tile(ee_list_old, (batch_size, 1))
+
+    dep.set_streams_global(batch_size)
+    
+    sigma_list_device = dep.create_sigma_list_GPU(dt)
+    
+    for step in range(MCsteps_old, MCsteps+1):
+        random_pairs, random_pair_ids = dep.select_cooling_evolution_indices_batch(loc_pairs, batch_size)
+
+        random_sigma_gates = dep.select_sigma_gates_batch(sigma_list_device, batch_size)
+
+        new_states = dep.ApplyLocalGate_GPU_batch(random_sigma_gates, 
+                                                  batch_size ,
+                                                  random_pairs, 
+                                                  state, 
+                                                  Nsites, 
+                                                  2, 
+                                                  dt)
+
+        ents_new, ees_list_new, relevant_partitions = dep.Renyi2_aftergate_correct_GPU_batch(Nsites, 
+                                                                                             R, 
+                                                                                             new_states, 
+                                                                                             batch_size,
+                                                                                             random_pairs)
+
+        ent_tamp = ee_list_old.copy()
+        for batch_num in range(batch_size):             
+
+            ent_tamp[batch_num] [relevant_partitions[batch_num][0]] = ees_list_new[batch_num][0]
+            ent_tamp[batch_num] [relevant_partitions[batch_num][1]] = ees_list_new[batch_num][1]
+
+        old_value = np.average( ee_list_old, axis = 1)
+        new_value = np.average( ent_tamp, axis = 1)
+            
+        for batch_num in range(batch_size): 
+            p_exp = -(1.0/T_grid[cc])*(new_value[batch_num] - old_value[batch_num])
+            if (p_exp > 50):
+                p = 1.0
+            else:
+                p = np.exp(p_exp)
+
+            random_value = np.random.uniform(0,1)
+            if (random_value <= min(1.0,p)):
+                accepted += 1
+                state[batch_num] = new_states[batch_num].copy()
+                ee_list_old[batch_num] = ent_tamp[batch_num].copy()
+        
+        if (step == 1):
+            y = np.average(ee_list_old, axis = 1).reshape(batch_size, 1)
+        else:
+            y = np.append(y, np.average(ee_list_old, axis = 1).reshape(batch_size, 1), axis = 1)
+            
+        if( step %  print_exponent == 0 ):
+            print(f"rank {simID} MC step = {step}")
+            
+        if (step % int(MCsteps/100) == 0):
+            cc += 1
+
+        if( step % 1000 == 0 and MCsteps>MCsteps_old):
+            for batch_num in range(batch_size):
+                with open(self.states_dir + f"/state_{simID}", "wb+") as f:
+                    pickle.dump(state[batch_num].get(), f)
+                    pickle.dump(ee_list_old[batch_num], f)
+                    pickle.dump(y[batch_num], f)
+            print(f"rank {simID} saved state on step {step}")
+            
+    return cp.asnumpy(y)
