@@ -3,38 +3,37 @@ import cupy as cp
 from mpi4py import MPI
 import pickle
 import os
-from dep import *
+import dependecies as dep
 from scipy.sparse.linalg import LinearOperator, eigsh, eigs
+import time
+import sys
 
-lista_y = np.empty(0)
 
-def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsites, dt, R, T_grid):
+
+def CPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state, y, ee_list_old):
     accepted = 0
-    cc = 0
-    global lista_y
-    
-    MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
-    
-    if (MCsteps_exponent >4):
-        print_exponent = int( 1000 )  
-    else:
-        print_exponent = int( 10**(MCsteps_exponent-1) )  #Printf only 10 times which steps computing
 
-    cum_time_apply_local_gate=0
-    cum_time_renyi=0
+    MCsteps        = self.MC
+    MCsteps_wanted = self.configuration["MCwanted"]  
     
-    for yy in range(MCsteps_old, MCsteps+1):
-        random_pair, random_pair_id = select_cooling_evolution_indices(loc_paris)
-        random_gate, random_gate_id = select_cooling_evolution_gates()
-        start=time.time()
-        new_state = ApplyLocalGate(random_gate,random_pair,state,Nsites,2,dt)
-        end=time.time()
-        cum_time_apply_local_gate+= (end-start)
+    Nsites = self.configuration["Nsites"]
+    R      = self.configuration["R"]
+    Lambda = self.configuration["lambda"]
+    dt     = self.dt
+    T_grid = self.T_grid
 
-        start=time.time()
-        ent_new, ee_list_new, relevant_partitions = Renyi2_aftergate_correct(Nsites,R,new_state,random_pair)
-        end=time.time()
-        cum_time_renyi+= (end-start)
+    for step in range(MCsteps_old, MCsteps+1):
+        random_pair, random_pair_id = dep.select_cooling_evolution_indices(loc_pairs)
+        random_gate, random_gate_id = dep.select_cooling_evolution_gates()
+
+        dep.timing.Start("ApplyLocalGate")
+        new_state = dep.ApplyLocalGate(random_gate,random_pair,state, Nsites, 2, dt)
+        dep.timing.Stop("ApplyLocalGate")
+
+        dep.timing.Start("RenyEntropy")
+        ent_new, ee_list_new, relevant_partitions = dep.Renyi2_aftergate_correct(Nsites, R, \
+                                                                                 new_state,random_pair)
+        dep.timing.Stop("RenyEntropy")
 
         ent_tamp = ee_list_old.copy()
 
@@ -58,66 +57,56 @@ def MC_Simulation(x, MCsteps, MCsteps_old, loc_paris , state, ee_list_old, Nsite
             state = new_state.copy()
             ee_list_old = ent_tamp.copy()
 
+        y = np.append(y, np.average(ee_list_old))
 
-        #lista_y.append(np.average(ee_list_old))
-        lista_y = np.append(lista_y, np.average(ee_list_old))
+        if ( MCsteps >=100 and step % int(MCsteps_wanted/100) == 0):
+            cc += 1
 
-        if( yy %  print_exponent == 0 ):
-            print("rank", x, 'MC step = %d' % yy)
+        if( step %  print_exponent == 0 ):
+            print(f"rank {simID} MC step = {step}")
 
-        if( yy % 1000 == 0 and MCsteps>MCsteps_old):
-            save_state_file_name = "state_{}".format(x)
-            f = open(str(states_dir)+"/"+str(save_state_file_name), "wb")
-            pickle.dump(new_state, f)
-            pickle.dump(ee_list_old, f)
-            pickle.dump(lista_y, f)
-            f.close()
-            print("rank", x, "saved state on step", yy)
+        if( step % 1_000 == 0 and MCsteps > MCsteps_old):
+            with open(self.states_dir + f"/state_{simID}", "wb+") as f:
+                pickle.dump(state, f)
+                pickle.dump(ee_list_old, f)
+                pickle.dump(y, f)
+                pickle.dump(cc, f)
+            print(f"rank {simID} saved state on step {step}")
 
-        if (yy % int(MCsteps/100) == 0):
-    	    cc += 1
-        
-        #if ( yy % 1000 ==0 ):
-        #    print("rank",x,"cum_time_apply_local_gate: " + str(round(cum_time_apply_local_gate,4)), file=open("time_of_exe/sim_{}.out".format(x),"a"))
-        #    print("rank",x,"cum_time_partial_trace in Renyi2 after gate: " + str(round(config.cum_time_partial_trace,4)), file=open("time_of_exe/sim_{}.out".format(x),"a"))
-        #    print("rank",x,"cum_time_entropy in Renyi2 after gate: " + str(round(config.cum_time_entropy,4) ), file=open("time_of_exe/sim_{}.out".format(x),"a"))
-        #    print("rank",x,"cum_time_Renyi2: " + str(round(cum_time_renyi,4)), file=open("time_of_exe/sim_{}.out".format(x),"a"))
-        #    print(str(round(cum_time_apply_local_gate,4)) +" + "+ str(round(cum_time_renyi,4)) +" = "+str(round(cum_time_apply_local_gate+ cum_time_renyi,4) ) +"\n\n" , file=open("time_of_exe/sim_{}.out".format(x),"a"))
-        #    print(yy, round(cum_time_apply_local_gate+ cum_time_renyi,4),file=open("time_of_exe/sim_plot_{}.out".format(x),"a"))
-        
-def MC_Simulation_GPU(x, node_rank, MCsteps, MCsteps_old, loc_pairs , state, ee_list_old, Nsites, dt, R, T_grid):
+    return y, accepted
+
+def GPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state, y, ee_list_old):
     accepted = 0
-    cc = 0
-    global lista_y
-    
-    MCsteps_exponent = round(np.log10(MCsteps-MCsteps_old))
-    
-    if (MCsteps_exponent >4):
-        print_exponent = int( 1000 )  
-    else:
-        print_exponent = int( 10**(MCsteps_exponent-1) )  #Printf only 10 times which steps computing
-
-    cum_time_apply_local_gate=0
-    cum_time_renyi=0
-    
     state_DEVICE = cp.asarray(state)
-    sigma_list_device = create_sigma_list_GPU(dt)
+    y = cp.asarray(y)
+
+    MCsteps = self.MC
+    MCsteps_wanted = self.configuration["MCwanted"]
+
+    Nsites = self.configuration["Nsites"]
+    R      = self.configuration["R"]
+    Lambda = self.configuration["lambda"]
+    dt     = self.dt
+    T_grid = self.T_grid
+
+    # Create and return sigma gates on device (cupy array)
+    sigma_list_device = dep.create_sigma_list_GPU(dt)
+    
     rand_sigma_value = len(sigma_list_device)
     
-    for yy in range(MCsteps_old, MCsteps+1):
-        random_pair, random_pair_id = select_cooling_evolution_indices(loc_pairs)
+    for step in range(MCsteps_old, MCsteps+1):
+        random_pair, random_pair_id = dep.select_cooling_evolution_indices(loc_pairs)
         random_sigma_gate = sigma_list_device[np.random.randint(rand_sigma_value)]
 
-        start=time.time()
-        new_state_DEVICE = ApplyLocalGate_GPU(random_sigma_gate,random_pair,state_DEVICE,Nsites,2,dt)
-        end=time.time()
-        cum_time_apply_local_gate+= (end-start)
+        dep.timing.Start("ApplyLocalGate")
+        new_state_DEVICE = dep.ApplyLocalGate_GPU(random_sigma_gate, random_pair, state_DEVICE, \
+                                                  Nsites, 2, dt)
+        dep.timing.Stop("ApplyLocalGate")
 
-        start=time.time()        
-        ent_new_DEVICE, ee_list_new_DEVICE, relevant_partitions = Renyi2_aftergate_correct_GPU(Nsites,R, new_state_DEVICE,random_pair)
-        end=time.time()
-        cum_time_renyi+= (end-start)
-
+        dep.timing.Start("RenyEntropy")
+        ent_new_DEVICE, ee_list_new_DEVICE, relevant_partitions = dep.Renyi2_aftergate_correct_GPU(Nsites, R, \
+                                                                                                   new_state_DEVICE,random_pair)
+        dep.timing.Stop("RenyEntropy")
         
         ent_new = cp.asnumpy(ent_new_DEVICE)
         ee_list_new = cp.asnumpy(ee_list_new_DEVICE)
@@ -143,410 +132,102 @@ def MC_Simulation_GPU(x, node_rank, MCsteps, MCsteps_old, loc_pairs , state, ee_
             state_DEVICE = new_state_DEVICE.copy()
             ee_list_old = ent_tamp.copy()
 
+        y = np.append(y, np.average(ee_list_old))
 
-        #lista_y.append(np.average(ee_list_old))
-        lista_y = np.append(lista_y, np.average(ee_list_old))
+        if( step %  print_exponent == 0 ):
+            print(f"rank {simID} MC step = {step}")
 
-        if( yy %  print_exponent == 0 ):
-            print("simulation", x, 'MC step = %d' % yy, "on", socket.gethostname())
+        if ( MCsteps >=100 and step % int(MCsteps_wanted/100) == 0):
+            cc += 1
 
-        if( yy % 1000 == 0 and MCsteps>MCsteps_old):
-            new_state = cp.asnumpy(new_state_DEVICE)
-            save_state_file_name = "state_{}".format(x)
-            f = open(str(states_dir)+"/"+str(save_state_file_name), "wb")
-            pickle.dump(new_state, f)
-            pickle.dump(ee_list_old, f)
-            pickle.dump(lista_y, f)
-            f.close()
-            print("rank", x, "saved state on step", yy)
 
-        if (yy % int(MCsteps/100) == 0):
-    	    cc += 1
+        if( step % 1000 == 0 and MCsteps>MCsteps_old):
+            with open(self.states_dir + f"/state_{simID}", "wb+") as f:
+                pickle.dump(state_DEVICE, f)
+                pickle.dump(ee_list_old, f)
+                pickle.dump(y, f)
+                pickle.dump(cc, f)
+            print(f"rank {simID} saved state on step {step}")
+   
+    return cp.asnumpy(y), accepted
 
-def cpu_sim(args):
-    # this dumb function doesn't work when in dependecies.py file so we put it here
-    def doApplyHamClosed(psiIn):
-        """ supplementary function  cast the Hamiltonian 'H' as a linear operator """
-        return doApplyHamTENSOR(psiIn, hloc, Nsites, usePBC)
 
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
+def batchGEMMIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs , state, y, ee_list_old):
+    accepted = 0
 
-    Nsites = args.N
-    R = args.R
-    lambdaa = args.L
-    MCsteps = args.MC
-    filename = args.o
-    eigen_filename_in = args.in_eigen
+    MCsteps        = self.MC
+    MCsteps_wanted = self.configuration["MCwanted"]
+    batch_size     = self.batch_size
 
-    # model parameters
-    usePBC    = True                         # use periodic or open boundaries (we typically want PBC)
+    Nsites = self.configuration["Nsites"]
+    R      = self.configuration["R"]
+    Lambda = self.configuration["lambda"]
+    dt     = self.dt
+    T_grid = self.T_grid
 
-    # simulation parameters
-    numval    = 1                            # number of eigenstates to compute (we want ground state so =1 is what we want)
-    dt        = np.pi/10.0                   # 'time-evolution' time step (this is a parameter we should change a bit to see if the results are consistent with it)
-
-    # defining a logaritmically decreasing temperature grid
-    T_grid    = np.logspace(-4,-8, num=101,base=10)
-    #print('T_grid =', T_grid)
-
-    sX, sY, sZ, sI = PauliMatrice()
-
-    concurrence1 = []
-    concurrence2 = []
-    magz_exact = []
-    magz_num = []
-    global lista_y
-
-    global states_dir
-
-    states_dir  = "saved_states_{}_{}_{}".format(Nsites, R, lambdaa)
-     
-    if ( args.resume):
-        if(not os.path.exists(states_dir) ):
-            if(rank == 0):
-                print("Error: no saved states, try without flag --resume.", flush=True)
-                comm.Abort()
-        comm.Barrier()
-        
-        number_of_saved_states = len(os.listdir(states_dir))
-
-        if( number_of_saved_states != size ):
-            if( rank ==0 ):
-                print("Error: number of parallel simulations is different than number of saved states. Try with mpirun -n", number_of_saved_states)
-                print("or set the arguments to calculate the simulations from the beginning (without --resume)", flush=True)
-                comm.Abort()
-        comm.Barrier()
-
-        saved_state_file = open(str(states_dir)+"/state_"+str(rank), "rb")
-        
-        eigenvectors = pickle.load( saved_state_file)
-        ee_list = pickle.load( saved_state_file)
-        lista_y = np.append(lista_y, pickle.load( saved_state_file))
-     
-        saved_state_file.close()
-
-        MCsteps_old = len(lista_y)
-        MCsteps_to_cont = MCsteps - MCsteps_old
-
-        if( MCsteps_to_cont < 10):
-            if( rank ==0 ):
-                print("Insert bigger number of monte carlo steps (MC) to resume simulations >", MCsteps_old+10)
-            comm.Barrier()
-            print("Current MC state of simulation ", rank, " is: ", MCsteps_old)
-            comm.Abort()
-        comm.Barrier()
-
-        print("rank ", rank, " loaded : " , lista_y.shape[0], ", number of steps to continue: ", MCsteps_to_cont, flush=True)
-
-        list_pairs_local_ham = generate_dictionary(Nsites,1, True)
-
-        MC_Simulation(rank, MCsteps, MCsteps_old, list_pairs_local_ham, eigenvectors, ee_list, Nsites, dt, R, T_grid)    
-     
-        if( rank ==0 ):
-            MC_data_final = np.empty(len(lista_y), dtype="float64")
-        else:
-            MC_data_final = None
-
-        comm.Reduce(np.array(lista_y), MC_data_final, op=MPI.SUM, root=0)
+    dep.set_streams_global(batch_size)
     
-        if (rank == 0):
-            save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
-            pickle.dump(MC_data_final/size, save_file)
-            save_file.close()
+    sigma_list_device = dep.create_sigma_list_GPU(dt)
+    
+    for step in range(MCsteps_old, MCsteps+1):
+        random_pairs, random_pair_ids = dep.select_cooling_evolution_indices_batch(loc_pairs, batch_size)
 
-    if (not args.resume):
+        random_sigma_gates = dep.select_sigma_gates_batch(sigma_list_device, batch_size)
 
-        if (args.in_eigen):
-            ###Read input eigenvector
-            f = open(eigen_filename_in, "rb")
-            eigenvectors = pickle.load(f)
-            f.close()
-        
-        else:
-            if(rank == 0):
-                #rank 0 calculate inital eigenvectors (save if flag --save_eigen) and distribute to other ranks
-                print("Calculating initial eigenvectors")
-                hloc = tfim_LocalHamiltonian_new(lambdaa)
-                H = LinearOperator((2**Nsites, 2**Nsites), matvec=doApplyHamClosed)
-                eigenvalues, eigenvectors = eigsh(H, k=numval, which='SA',return_eigenvectors=True)
-                
-                if(args.save_eigen):
-                    save_eigen_file = open("eigenvecs_{}_{}.bin".format(Nsites, R), "wb")
-                    pickle.dump(eigenvectors, save_eigen_file)
-                    save_eigen_file.close()
-                    print("Eigenstate saved in file", save_eigen_file.name)
+        new_states = dep.ApplyLocalGate_GPU_batch(random_sigma_gates, 
+                                                  batch_size ,
+                                                  random_pairs, 
+                                                  state, 
+                                                  Nsites, 
+                                                  2, 
+                                                  dt)
 
+        ents_new, ees_list_new, relevant_partitions = dep.Renyi2_aftergate_correct_GPU_batch(Nsites, 
+                                                                                             R, 
+                                                                                             new_states, 
+                                                                                             batch_size,
+                                                                                             random_pairs)
+
+        ent_tamp = ee_list_old.copy()
+        for batch_num in range(batch_size):             
+
+            ent_tamp[batch_num] [relevant_partitions[batch_num][0]] = ees_list_new[batch_num][0]
+            ent_tamp[batch_num] [relevant_partitions[batch_num][1]] = ees_list_new[batch_num][1]
+
+        old_value = np.average( ee_list_old, axis = 1)
+        new_value = np.average( ent_tamp, axis = 1)
+            
+        for batch_num in range(batch_size): 
+            p_exp = -(1.0/T_grid[cc])*(new_value[batch_num] - old_value[batch_num])
+            if (p_exp > 50):
+                p = 1.0
             else:
-                eigenvectors = np.empty(2**Nsites, dtype="float64")    
+                p = np.exp(p_exp)
+
+            random_value = np.random.uniform(0,1)
+            if (random_value <= min(1.0,p)):
+                accepted += 1
+                state[batch_num] = new_states[batch_num].copy()
+                ee_list_old[batch_num] = ent_tamp[batch_num].copy()
+        
+        if (step == 1):
+            y = np.average(ee_list_old, axis = 1).reshape(batch_size, 1)
+        else:
+            y = np.append(y, np.average(ee_list_old, axis = 1).reshape(batch_size, 1), axis = 1)
             
-            comm.Barrier()
-
-        eigenvectors = comm.bcast(eigenvectors, root=0)
-
-        if (rank == 0):
-                if not os.path.exists(states_dir):
-                    os.mkdir(states_dir)    
-
-        #computing the initial Renyi2 entropy
-        ent, ee_list = Renyi2(Nsites,R,eigenvectors[:,0])
-    
-        concurrence1.append(ent)
-    
-        # generate the list of pairs for the application of the local Hamiltonian
-        list_pairs_local_ham = generate_dictionary(Nsites,1, True)
-    
-        print("Starting simulation", flush=True)
-        MC_Simulation(rank, MCsteps, 1, list_pairs_local_ham, eigenvectors[:,0], ee_list, Nsites, dt, R, T_grid)
-    
-        if( rank ==0 ):
-            MC_data_final = np.empty(len(lista_y), dtype="float64")
-        else:
-            MC_data_final = None
-
-        comm.Reduce(lista_y, MC_data_final, op=MPI.SUM, root=0)
-
-    
-        if (rank == 0):
-            save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
-            pickle.dump(MC_data_final/size, save_file)
-            save_file.close()
-
-def gpu_sim(args):
-    
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-
-    Nsites = args.N
-    R = args.R
-    lambdaa = args.L
-    MCsteps = args.MC
-    filename = args.o
-    eigen_filename_in = args.in_eigen
-
-    #if ( rank == 0):
-    #    print(sys.argv[0])
-
-    # model parameters
-    usePBC    = True                         # use periodic or open boundaries (we typically want PBC)
-
-    # simulation parameters
-    numval    = 1                            # number of eigenstates to compute (we want ground state so =1 is what we want)
-    dt        = np.pi/10.0                   # 'time-evolution' time step (this is a parameter we should change a bit to see if the results are consistent with it)
-
-    # defining a logaritmically decreasing temperature grid
-    T_grid    = np.logspace(-4,-8, num=101,base=10)
-    #print('T_grid =', T_grid)
-
-    sX, sY, sZ, sI = PauliMatrice()
-
-    concurrence1 = []
-    concurrence2 = []
-    magz_exact = []
-    magz_num = []
-    global lista_y
-
-    global states_dir
-
-    states_dir  = "saved_states_{}_{}_{}".format(Nsites, R, lambdaa)
-     
-    if ( args.resume):
-        if(not os.path.exists(states_dir) ):
-            if(rank == 0):
-                print("Error: no saved states, try without flag --resume.", flush=True)
-                comm.Abort()
-        comm.Barrier()
-        
-        number_of_saved_states = len(os.listdir(states_dir))
-
-        if( number_of_saved_states != size ):
-            if( rank ==0 ):
-                print("Error: number of parallel simulations is different than number of saved states. Try with mpirun -n", number_of_saved_states)
-                print("or set the arguments to calculate the simulations from the beginning (without --resume)", flush=True)
-                comm.Abort()
-        comm.Barrier()
-
-        saved_state_file = open(str(states_dir)+"/state_"+str(rank), "rb")
-        
-        eigenvectors = pickle.load( saved_state_file)
-        ee_list = pickle.load( saved_state_file)
-        lista_y = np.append(lista_y, pickle.load( saved_state_file))
-        
-        saved_state_file.close()
-
-        MCsteps_old = len(lista_y)
-        MCsteps_to_cont = MCsteps - MCsteps_old
-
-        if( MCsteps_to_cont < 10):
-            if( rank ==0 ):
-                print("Insert bigger number of monte carlo steps (MC) to resume simulations >", MCsteps_old+10)
-            comm.Barrier()
-            print("Current MC state of simulation ", rank, " is: ", MCsteps_old)
-        
-            comm.Abort()
-        comm.Barrier()
-
-        print("rank ", rank, " loaded : " , lista_y.shape[0], ", number of steps to continue: ", MCsteps_to_cont, flush=True)
-
-        list_pairs_local_ham = generate_dictionary(Nsites,1, True)
-
-        node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
-        node_rank = node_comm.Get_rank()
-        node_size = node_comm.Get_size()
-        number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
-        cp.cuda.Device(node_rank % number_of_device_on_node).use()
-
-        MC_Simulation_GPU(rank, node_rank, MCsteps, MCsteps_old, list_pairs_local_ham, eigenvectors, ee_list, Nsites, dt, R, T_grid)    
-     
-        if( rank ==0 ):
-            MC_data_final = np.empty(len(lista_y), dtype="float64")
-        else:
-            MC_data_final = None
-
-        comm.Reduce(np.array(lista_y), MC_data_final, op=MPI.SUM, root=0)
-    
-        if (rank == 0):
-            save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
-            pickle.dump(MC_data_final/size, save_file)
-            save_file.close()
-
-    if (not args.resume):
-
-        if (args.in_eigen):
-            ###Read input eigenvector
-            f = open(eigen_filename_in, "rb")
-            eigenvectors = pickle.load(f)
-            f.close()
-
-        if (rank == 0):
-                if not os.path.exists(states_dir):
-                    os.mkdir(states_dir)  
-    
-
-        start = time.time()
-        #computing the initial Renyi2 entropy
-        
-        ent, ee_list = Renyi2(Nsites,R,eigenvectors[:,0])
-    
-        concurrence1.append(ent)
-    
-        # generate the list of pairs for the application of the local Hamiltonian
-        list_pairs_local_ham = generate_dictionary(Nsites,1, True)
-
-        node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
-        node_rank = node_comm.Get_rank()
-        node_size = node_comm.Get_size()
-        number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
-
-        on_device  = node_rank % number_of_device_on_node
-        with cp.cuda.Device(on_device):
-            print("node rank", node_rank, "Starting simulation on device", cp.cuda.runtime.getDeviceProperties(0)['name'] ,flush=True)
-            MC_Simulation_GPU(rank, node_rank, MCsteps, 1, list_pairs_local_ham, eigenvectors[:,0], ee_list, Nsites, dt, R, T_grid)
-    
-        if( rank ==0 ):
-            MC_data_final = np.empty(len(lista_y), dtype="float64")
-        else:
-            MC_data_final = None
-
-        comm.Reduce(lista_y, MC_data_final, op=MPI.SUM, root=0)
-        end = time.time()
-
-        if (rank == 0):
-            print("time of exe", round(end-start,4), " s")
-            save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
-            pickle.dump(MC_data_final/size, save_file)
-            save_file.close()
-
-        
-
+        if( step %  print_exponent == 0 ):
+            print(f"rank {simID} MC step = {step}")
             
-def batch_sim_gpu(args):
-    print(args)
-    #fun_fun(args.sim_per_batch)
-	    
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-	
-    if(size != args.sim_per_batch):
-        print("Number of simulation different than -s option", flush=True)
-        comm.Abort()
-    comm.Barrier()
-		
+        if ( MCsteps >=100 and step % int(MCsteps_wanted/100) == 0):
+            cc += 1
 
-    Nsites = args.N
-    R = args.R
-    lambdaa = args.L
-    MCsteps = args.MC
-    filename = args.o
-    eigen_filename_in = args.in_eigen
-
-    # model parameters
-    usePBC    = True                         # use periodic or open boundaries (we typically want PBC)
-
-    # simulation parameters
-    numval    = 1                            # number of eigenstates to compute (we want ground state so =1 is what we want)
-    dt        = np.pi/10.0                   # 'time-evolution' time step (this is a parameter we should change a bit to see if the results are consistent with it)
-
-    # defining a logaritmically decreasing temperature grid
-    T_grid    = np.logspace(-4,-8, num=101,base=10)
-    #print('T_grid =', T_grid)
-
-    sX, sY, sZ, sI = PauliMatrice()
-
-    concurrence1 = []
-    concurrence2 = []
-    magz_exact = []
-    magz_num = []
-    global lista_y
-
-    global states_dir
-
-    states_dir  = "saved_states_{}_{}_{}".format(Nsites, R, lambdaa)
-
-    if (not args.resume):
-
-        if (args.in_eigen):
-            ###Read input eigenvector
-            f = open(eigen_filename_in, "rb")
-            eigenvectors = pickle.load(f)
-            f.close()
-
-        if (rank == 0):
-                if not os.path.exists(states_dir):
-                    os.mkdir(states_dir)    
-
-
-        #computing the initial Renyi2 entropy
-        
-        ent, ee_list = Renyi2(Nsites,R,eigenvectors[:,0])
-    
-        concurrence1.append(ent)
-    
-        # generate the list of pairs for the application of the local Hamiltonian
-        list_pairs_local_ham = generate_dictionary(Nsites,1, True)
-
-        #node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
-        #node_rank = node_comm.Get_rank()
-        #node_size = node_comm.Get_size()
-        #number_of_device_on_node = cp.cuda.runtime.getDeviceCount()
-        #print(rank, node_rank, node_rank % number_of_device_on_node)
-
-        batch_rank = rank + args.sim_per_batch * args.batch_job_id
-        print("rank", rank, "batch rank", batch_rank, "number of devices", cp.cuda.runtime.getDeviceCount())
-        print("node rank", batch_rank, "Starting simulation on device", flush=True)
-        MC_Simulation_GPU(batch_rank, args.batch_job_id, MCsteps, 1, list_pairs_local_ham, eigenvectors[:,0], ee_list, Nsites, dt, R, T_grid)
-    
-        if( rank ==0 ):
-            MC_data_final = np.empty(len(lista_y), dtype="float64")
-        else:
-            MC_data_final = None
-
-        comm.Reduce(lista_y, MC_data_final, op=MPI.SUM, root=0)
-    
-        if (rank == 0):
-            save_file = open(filename.format(Nsites, R, lambdaa, MCsteps, size), "wb")
-            pickle.dump(MC_data_final/size, save_file)
-            save_file.close()
+        if( step % 1000 == 0 and MCsteps>MCsteps_old):
+            for batch_num in range(batch_size):
+                with open(self.states_dir + f"/state_{simID * batch_size + batch_num}", "wb+") as f:
+                    pickle.dump(state[batch_num], f)
+                    pickle.dump(ee_list_old[batch_num], f)
+                    pickle.dump(y[batch_num], f)
+                    pickle.dump(cc, f)
+            print(f"rank {simID} saved state on step {step}")
+            
+    return cp.asnumpy(y)
