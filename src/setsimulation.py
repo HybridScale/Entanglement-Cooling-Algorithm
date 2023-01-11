@@ -33,7 +33,13 @@ class Simulation:
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
+        
+        self.batch_size = 1
+        if (args.mode == "batchedGEMM"):
+            self.batch_size = args.bs
 
+        self.simulation_size = self.size * self.batch_size
+        
         simulation_file = f"Renyi_entropy_raw_{args.N}_{args.R}_{args.L}_{args.MC}_{self.size}.bin"
 
         self.configuration = {
@@ -41,7 +47,7 @@ class Simulation:
             "R"       : args.R,
             "lambda"  : args.L,
             "MCwanted": args.MC if args.MC_wanted == 0 else args.MC_wanted,
-            "sim_size": self.size,
+            "sim_size": self.simulation_size,
             "simfile" : simulation_file if args.o == None else args.o
         }
 
@@ -51,16 +57,11 @@ class Simulation:
         self.mode              = args.mode
         self.save_eigen        = args.save_eigen
 
-        if (args.f == None):
-            self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
-                                                              self.configuration["R"], 
-                                                              self.configuration["lambda"])
-        else:
+        self.states_dir  = "saved_states_{}_{}_{}".format(self.configuration["Nsites"],
+                                                          self.configuration["R"], 
+                                                          self.configuration["lambda"])
+        if (not args.f == None):
             self.states_dir = args.f
-        
-    
-        if (args.mode == "batchedGEMM"):
-            self.batch_size = args.bs
 
         # model parameters
         # use periodic or open boundaries (we typically want PBC)
@@ -90,6 +91,12 @@ class Simulation:
         
         self.states_dir = args.savedfolder
 
+        self.batch_size = 1
+        if (args.mode == "batchedGEMM"):
+            self.batch_size = args.bs
+
+        self.simulation_size = self.size * self.batch_size
+
         self.__print_config(self.configuration)
         self.__check_mpi_size()
 
@@ -117,8 +124,9 @@ class Simulation:
 
 
         if (self.resume):
-            state, ee, y, cc = self.__resume_read_states(sim_rank)
-            MCold = y.size + 1
+            state, ee, y, cc, MCold= self.__resume_read_states(sim_rank)
+            #print(f"y shape {y.shape}")
+            #MCold = y.shape[1] + 1
 
             MCwanted = self.configuration["MCwanted"]
             self.MC = MCwanted if self.MC == None else self.MC + MCold
@@ -144,11 +152,12 @@ class Simulation:
             print(dep.timing)
 
     def __check_mpi_size(self):
-        MPIsize       =  self.size
-        MPIresumeSize = self.configuration["sim_size"]
-        if ( MPIresumeSize != MPIsize):
+        simulation_size = self.simulation_size
+        MPIresumeSize   = self.configuration["sim_size"]
+
+        if ( MPIresumeSize != simulation_size):
             if (self.rank == 0):
-                print(f"invalid number of MPI ranks!! Simulation started with {MPIsize} ranks instead of {MPIresumeSize}.")
+                print(f"invalid number of MPI ranks!! Simulation started with {simulation_size} ranks instead of {MPIresumeSize}.")
             sys.exit()
 
         
@@ -199,7 +208,7 @@ class Simulation:
                 hloc = dep.tfim_LocalHamiltonian_new(Lambda)
                 H = LinearOperator((2**Nsites, 2**Nsites), matvec=doApplyHamClosed)
                 eigenvalues, eigenvectors = eigsh(H, k=self.numval, which='SA',return_eigenvectors=True)
-                eigenvectors = eigenvectors[:, 0]
+                eigenvectors = eigenvectors[:, 0].astype("complex128")
                 
                 if(self.save_eigen):
                     with open(f"eigenvecs_{Nsites}_{R}.bin", "wb") as file:
@@ -207,23 +216,47 @@ class Simulation:
                         print("Eigenstate saved in file", file.name)
 
             else:
-                eigenvectors = np.empty(2**Nsites, dtype="float64")
+                eigenvectors = np.empty(2**Nsites, dtype="complex128")
                 
             self.comm.Barrier()
 
             eigenvectors = self.comm.bcast(eigenvectors, root=0)
-
+        
         return np.array(eigenvectors)
 
 
     def __resume_read_states(self, sim_rank):
-        with open(self.states_dir + f"/state_{sim_rank}", "rb") as f:
-            state = pickle.load(f)
-            ee      = pickle.load( f)
-            y       = pickle.load( f)
-            cc      = pickle.load( f)
-        
-        return state, ee, y, cc
+
+
+        if (self.mode == "batchedGEMM"):
+            Nsites   = self.configuration["Nsites"]
+
+            state = np.empty(0, dtype = "complex128")
+            ee    = np.empty(0)
+            y     = np.empty(0)
+
+            for batch_num in range(self.batch_size):
+                with open(self.states_dir + f"/state_{sim_rank * self.batch_size + batch_num}", "rb") as f:
+                    state = np.append(state, pickle.load(f))
+                    ee    = np.append(ee, pickle.load(f))
+                    ytmp  = pickle.load(f)
+                    steps = ytmp.shape[0]
+                    y     = np.append(y, ytmp)
+                    cc    = pickle.load( f)
+
+            state = state.reshape(self.batch_size, 2**Nsites)
+            ee    = ee.reshape(self.batch_size, Nsites)
+            y     = y.reshape(self.batch_size, steps)
+
+        else:
+            with open(self.states_dir + f"/state_{sim_rank}", "rb") as f:
+                state   = pickle.load(f)
+                ee      = pickle.load( f)
+                y       = pickle.load( f)
+                cc      = pickle.load( f)
+                steps   = y.shape[0]
+
+        return state, ee, y, cc, (steps +1)
 
 
     def __cudaDeviceID(self):
@@ -258,6 +291,9 @@ class Simulation:
         elif (self.mode == "batchedGEMM"):
             deviceID = self.__cudaDeviceID()
             with cp.cuda.Device(deviceID):
+                if (not self.resume):
+                    state  = cp.tile(state, (self.batch_size, 1))
+                    ee     = cp.tile(ee, (self.batch_size, 1))
                 y = self.batchGEMMIteration(simID, cc, MCold, print_exponent, loc_pairs, state, y, ee)
 
 

@@ -59,6 +59,7 @@ def handle_batchGEMM_args(subparser):
     exclusive_args(batchGEMMnew)
     optional_args(batchGEMMnew)
     batchGEMMnew.add_argument("--bs", metavar="batch_size", help='Number of Monte Carlo conncurent on single GPU', required=True, type=int, default=1)
+    batchGEMMresume.add_argument("--bs", metavar="batch_size", help='Number of Monte Carlo conncurent on single GPU', required=True, type=int, default=1)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='MPI version of computing the Renyi2 entropy by Monte Carlo simulations')

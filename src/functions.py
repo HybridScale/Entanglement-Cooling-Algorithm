@@ -140,6 +140,7 @@ def GPUIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs, state,
         if ( MCsteps >=100 and step % int(MCsteps_wanted/100) == 0):
             cc += 1
 
+
         if( step % 1000 == 0 and MCsteps>MCsteps_old):
             with open(self.states_dir + f"/state_{simID}", "wb+") as f:
                 pickle.dump(state_DEVICE, f)
@@ -163,9 +164,6 @@ def batchGEMMIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs ,
     Lambda = self.configuration["lambda"]
     dt     = self.dt
     T_grid = self.T_grid
-
-    state       = cp.tile(state, (batch_size, 1))
-    ee_list_old = cp.tile(ee_list_old, (batch_size, 1))
 
     dep.set_streams_global(batch_size)
     
@@ -220,15 +218,16 @@ def batchGEMMIteration(self, simID, cc, MCsteps_old, print_exponent, loc_pairs ,
         if( step %  print_exponent == 0 ):
             print(f"rank {simID} MC step = {step}")
             
-        if (step % int(MCsteps/100) == 0):
+        if ( MCsteps >=100 and step % int(MCsteps_wanted/100) == 0):
             cc += 1
 
         if( step % 1000 == 0 and MCsteps>MCsteps_old):
             for batch_num in range(batch_size):
-                with open(self.states_dir + f"/state_{simID}", "wb+") as f:
-                    pickle.dump(state[batch_num].get(), f)
+                with open(self.states_dir + f"/state_{simID * batch_size + batch_num}", "wb+") as f:
+                    pickle.dump(state[batch_num], f)
                     pickle.dump(ee_list_old[batch_num], f)
                     pickle.dump(y[batch_num], f)
+                    pickle.dump(cc, f)
             print(f"rank {simID} saved state on step {step}")
             
     return cp.asnumpy(y)
