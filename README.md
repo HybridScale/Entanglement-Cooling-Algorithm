@@ -14,21 +14,45 @@ The list of required Python libraries and other prerequisits is given in the fil
 
 - numpy
 - scipy
-- mpi4py (if distributed GPU support is required)
-- cupy (if GPU support is required)
+- mpi4py (for distributed support)
+- cupy (for GPU versions)
 - ???
 
 ## Quick start
 
 ### Cloning the code
 
-To be added once 
+```
+git clone https://github.com/HybridScale/Entanglement-Cooling-Algorithm.git
+```
 
-### Building and installing
-
-### Execution environment
-
+### Python envirnoments 
+Repository provides file `Requirements.txt` with Python packages needed for simulation. To create new Virtual Envirnoment in Python with Conda and install all required packages:
+```
+conda create --name ENVNAME --file Requirements.txt
+```
 ### Running
+Repository provide [src/main.py](main.py) script, which implements cli interface.  
+Run `python src/main.py -h` to get info on execution versions. Algorithm can execute on CPU and GPU. 
+GPU simulation have two options, either run one simulation (`GPU`) or run multiple simulations packed on single GPU (`batchedGEMM`) into one batched operation.
+
+Execution of simulation can be resumed from last simulation step with same initial parameters.
+Run next command to chech options:
+```
+python src/main.phy {CPU,GPU,batchedGEMM} -h
+```
+
+Use positional arguments to choose desired version. Cli also provides information on the rich execution simulation options and parameters.
+```
+python src/main.phy {CPU, GPU, batchedGEMM} {new, resume}-h
+```
+
+#### Multiple simulation
+Using `MPI` multiple simulations can be calculated at the same time. 
+
+```
+mpirun -n N python src/main.py GPU new --N 19 --R 9 --L 2.5 --MC 1000 -w 10000000
+```
 
 ### Examples
 
