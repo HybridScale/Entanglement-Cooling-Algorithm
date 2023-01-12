@@ -9,5 +9,4 @@ pipelines:
           - git clone --branch="master" --bare git@bitbucket.org:davordavidovic/batched-gemm-montecarlo.git
           - cd batched-gemm-montecarlo.git
           - git config push.default upstream
-          - git reset -- bitbucket-pipelines.yml
           - git push git@github.com:HybridScale/Entanglement-Cooling-Algorithm.git master
