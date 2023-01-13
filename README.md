@@ -8,37 +8,73 @@ The code is developed at the [Ruđer Bošković Institute](https://www.irb.hr/) 
 
 The code is written in Python which enables straightforward portability over different computational platforms. The code supports execution on shared memory systems (manycore and multi-CPU systems) and on distributed GPUs systems using the Message Passing Interface (MPI).
 
-## Prerequisits
+The development of the code was supported by the Croatia Science Foundation through the project UIP-2020-02-4559 "Scalable high-performance algorithms for future heterogeneous distributed computer systems"([HybridScale](https://www.croris.hr/projekti/projekt/6243?lang=en)).
 
-The list of required Python libraries and other prerequisits is given in the file [Requirements.txt](./Requirements.txt)
+## Dependencies
 
+The list of required Python libraries and other dependencies is given in the file [Requirements.txt](./Requirements.txt)
+
+- conda
 - numpy
 - scipy
-- mpi4py (if distributed GPU support is required)
-- cupy (if GPU support is required)
-- ???
+- argparse
+- scipy
+- mpi4py
+- cupy
+- nvtx
+- itertools
+- pickle
+
+## Versions of the code
+
+The Entaglement cooling algorithm support three execution modes depending on the available hardware resources:
+
+- **CPU:** The code is executed only on CPUs using MPI.
+
+- **GPU:** The code is executed on GPUs using MPI. One MPI utilizes only one GPU.
+
+- **batchedGEMM:** The code is executed on (distributed) GPUs using MPI. Instead of running one matrix multiplication at the time on one gpu, multiple matrix multiplications are packed into one larger and executed on one GPU. This approach attains much better performance than in the 'CPU' mode.
 
 ## Quick start
 
 ### Cloning the code
 
-To be added once 
+```bash
+git clone https://github.com/HybridScale/Entanglement-Cooling-Algorithm.git
+```
 
-### Building and installing
+### Installing dependencies
 
-### Execution environment
+The easiest way is to setup and install all the dependencies by creating conda environment using the provided [Requirements.txt](./Requirements.txt) file.
+
+1. Create conda environment
+```bash
+conda create --name myenv --file Requirements.txt
+```
+
+2. Activate conda environment
+```bash
+conda activate myenv
+```
 
 ### Running
 
+```bash
+cd Entanglement-Cooling-Algorithm/
+mkdir run && cd run
+
+```
 ### Examples
+
+To be done
 
 ## Fine-tune the execution
 
-Describe how to choose an optimaln number of MPI ranks per GPU and the number of GPU w.r.t to the problem size (number of spins) and the number of MC trajectories.
+To be done
 
 ## Developers
 
-### Developing the main code
+### The main code
 
 - Jovan Odavić 
 - Gianpaolo Torre
