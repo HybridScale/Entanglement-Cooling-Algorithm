@@ -8,10 +8,13 @@ The code is developed at the [Ruđer Bošković Institute](https://www.irb.hr/) 
 
 The code is written in Python which enables straightforward portability over different computational platforms. The code supports execution on shared memory systems (manycore and multi-CPU systems) and on distributed GPUs systems using the Message Passing Interface (MPI).
 
-## Prerequisits
+The development of the code was supported by the Croatia Science Foundation through the project UIP-2020-02-4559 "Scalable high-performance algorithms for future heterogeneous distributed computer systems"([HybridScale](https://www.croris.hr/projekti/projekt/6243?lang=en)).
 
-The list of required Python libraries and other prerequisits is given in the file [Requirements.txt](./Requirements.txt)
+## Dependencies
 
+The list of required Python libraries and other dependencies is given in the file [Requirements.txt](./Requirements.txt)
+
+- conda
 - numpy
 - scipy
 - mpi4py (for distributed support)
@@ -54,15 +57,22 @@ Using `MPI` multiple simulations can be calculated at the same time.
 mpirun -n N python src/main.py GPU new --N 19 --R 9 --L 2.5 --MC 1000 -w 10000000
 ```
 
+```bash
+cd Entanglement-Cooling-Algorithm/
+mkdir run && cd run
+
+```
 ### Examples
+
+To be done
 
 ## Fine-tune the execution
 
-Describe how to choose an optimaln number of MPI ranks per GPU and the number of GPU w.r.t to the problem size (number of spins) and the number of MC trajectories.
+To be done
 
 ## Developers
 
-### Developing the main code
+### The main code
 
 - Jovan Odavić 
 - Gianpaolo Torre
