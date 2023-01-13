@@ -12,56 +12,86 @@ The development of the code was supported by the Croatia Science Foundation thro
 
 ## Dependencies
 
-The list of required Python libraries and other dependencies is given in the file [Requirements.txt](./Requirements.txt)
-
 - conda
 - numpy
 - scipy
 - mpi4py (for distributed support)
 - cupy (for GPU versions)
-- ???
+- argparse
+- scipy
+- mpi4py
+- cupy
+- nvtx
+- itertools
+- pickle
+
+A detailed list of the required Python libraries and other dependencies is given in the file [Requirements.txt](./Requirements.txt).
+
+## Versions of the code
+
+The Entaglement cooling algorithm support three execution modes depending on the available hardware resources:
+
+- **CPU:** The code is executed only on CPUs using MPI.
+
+- **GPU:** The code is executed on GPUs using MPI. Only one Monte Carlo trajectory is run on one GPU.
+
+- **batchedGEMM:** The code is executed on (distributed) GPUs using MPI. Multiple Monte Carlo trajectories are packed into one larger and executed on one GPU. This approach attains much higher performance than in the previous two modes.
 
 ## Quick start
 
 ### Cloning the code
 
-```
+```bash
 git clone https://github.com/HybridScale/Entanglement-Cooling-Algorithm.git
 ```
 
-### Python envirnoments 
-Repository provides file `Requirements.txt` with Python packages needed for simulation. To create new Virtual Envirnoment in Python with Conda and install all required packages:
-```
-conda create --name ENVNAME --file Requirements.txt
-```
-### Running
-Repository provide [src/main.py](main.py) script, which implements cli interface.  
-Run `python src/main.py -h` to get info on execution versions. Algorithm can execute on CPU and GPU. 
-GPU simulation have two options, either run one simulation (`GPU`) or run multiple simulations packed on single GPU (`batchedGEMM`) into one batched operation.
+### Install Python envirnoment 
 
-Execution of simulation can be resumed from last simulation step with same initial parameters.
-Run next command to chech options:
+The repository provides the file [Requirements.txt](./Requirements.txt) with Python packages needed for simulation. To create new Virtual Envirnoment in Python with Conda and install all required packages run:
+
+```bash
+conda create --name myenv --file Requirements.txt
+```
+
+To activate conda environment with all the required dependencies installed run:
+```bash
+conda activate myenv
+```
+
+### Running
+
+Repository provide [src/main.py](main.py) script which implements the cli interface.  
+To get info on different code versions run:
+
+```bash
+python src/main.py -h
+``` 
+Three different versions are available: *CPU*, *GPU* and *BatchedGEMM*.
+ 
+Both *GPU* and *BatchedGEMM* support execution on the GPUs. The `GPU` runs one simulation per GPU and the `batchedGEMM` multiple simulations packed on a single GPU into one batched operation.
+
+The simulation can be resumed from the last simulation with the same initial parameters or a new simulation can be started.
+To check the options run:
+
 ```
 python src/main.phy {CPU,GPU,batchedGEMM} -h
 ```
 
 Use positional arguments to choose desired version. Cli also provides information on the rich execution simulation options and parameters.
-```
-python src/main.phy {CPU, GPU, batchedGEMM} {new, resume}-h
-```
-
-#### Multiple simulation
-Using `MPI` multiple simulations can be calculated at the same time. 
 
 ```
-mpirun -n N python src/main.py GPU new --N 19 --R 9 --L 2.5 --MC 1000 -w 10000000
+python src/main.phy {CPU, GPU, batchedGEMM} {new, resume} -h
 ```
+
+### Run multiple simulation in parallel
+By using `MPI` multiple simulations (Monte Carlo trajectories) can be calculated at the same time. 
+
+An example starting a new run on `4` MPI processes (ranks) with `19` lattice sites, subsystem of size `9`, coupling parameter `2.5`, `100` Monte Carlo simulations each with `10000000` steps.
 
 ```bash
-cd Entanglement-Cooling-Algorithm/
-mkdir run && cd run
-
+mpirun -n 4 python src/main.py GPU new --N 19 --R 9 --L 2.5 --MC 100 -w 10000000
 ```
+
 ### Examples
 
 To be done
