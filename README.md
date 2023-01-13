@@ -31,9 +31,9 @@ The Entaglement cooling algorithm supports three execution modes depending on th
 
 - **CPU:** The code is executed on CPUs using MPI.
 
-- **GPU:** The code is executed on GPUs using MPI. Only one Monte Carlo simulation is executed per GPU.
+- **GPU:** The code is executed on GPUs using MPI. Only one Monte Carlo simulation is run per GPU. If multiple Monte Carlo simulations are to be run, they are run in a sequential order.
 
-- **batchedGEMM:** The code is executed on (distributed) GPUs using MPI. Multiple Monte Carlo simulations are packed into one larger one and executed on the GPU. This approach achieves much higher performance than the previous two modes.
+- **batchedGEMM:** The code is executed on (distributed) GPUs using MPI. Multiple Monte Carlo simulations are packed into one larger one and executed simultaneously on the GPU. This approach achieves much higher performance than the previous two modes.
 
 ## Quick start
 
@@ -43,7 +43,7 @@ The Entaglement cooling algorithm supports three execution modes depending on th
 git clone https://github.com/HybridScale/Entanglement-Cooling-Algorithm.git
 ```
 
-### Install Python envirnoment 
+### Install Python environment
 
 The repository provides the file [Requirements.txt](./Requirements.txt) with Python packages needed for simulation. To create new Virtual Envirnoment in Python with Conda and install all required packages run:
 
@@ -81,7 +81,7 @@ Use positional arguments to select the desired version. CLI also provides inform
 python src/main.phy {CPU, GPU, batchedGEMM} {new, resume} -h
 ```
 
-### Run multiple simulation in parallel
+### Run multiple simulations in parallel
 By using `MPI`, several simulations (Monte Carlo simulations) can be calculated at the same time. 
 
 An example: start a new run on `4` MPI processes (ranks) with `19` lattice sites, subsystem of size `9`, coupling parameter `2.5`, `100` Monte Carlo simulations with `10000000` steps each.
@@ -114,7 +114,7 @@ To be done
 
 ## Contribution
 
-This repository mirrors the principal repository of the code on Bitbucket. If you want to contribute to the code please contact davor.davidovic@irb.hr or jovan.odavic@irb.hr
+This repository mirrors the principal repository of the code on Bitbucket. If you want to contribute to the code please contact *davor.davidovic@irb.hr* or *jovan.odavic@irb.hr*.
 
 ## How to cite the code
 
