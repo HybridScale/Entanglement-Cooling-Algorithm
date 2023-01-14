@@ -22,11 +22,11 @@ A detailed list of the required Python libraries and dependencies is given in th
 
 The Entaglement cooling algorithm supports three execution modes depending on the available hardware resources:
 
-- **CPU:** Computes one Monte Carlo simulation using all available cores and processors of the shared memory system. If the code is started with MPI (mpirun), the number of started Monte Carlo simulations will be equal to the number of MPI ranks.
+- ** CPU:** Computes a Monte Carlo simulation using all available cores and processors of the shared memory system. If the code is started with MPI (mpirun), the number of Monte Carlo simulations started is equal to the number of MPI ranks.
 
-- **GPU:** Computes one Monte Carlo simulation on a GPU. If the code is started with MPI (mpirun), the number of started Monte Carlo simulation will be equal to the number of MPI ranks. Multiple MPI ranks can associated with the same GPU. 
+- **GPU:** Calculates a Monte Carlo simulation on a GPU. If the code is started with MPI (mpirun), the number of Monte Carlo simulations started is equal to the number of MPI ranks. Several MPI ranks can be connected to the same GPU.
 
-- **batchedGEMM:** Computes a number of Monte Carlo simulations on a GPU. Monte Carlo simulations are packed in batches and executed on one GPU. If the code is started with MPI (mpirun), the number of Monte Carlo simulations is equal to product of the MPI ranks and the batch size.
+- **batchedGEMM:** Calculates a number of Monte Carlo simulations on a GPU. The Monte Carlo simulations are batched and run on a GPU. When the code is started with MPI (mpirun), the number of Monte Carlo simulations is equal to the product of the MPI ranks and the batch size.
 
 ## Quick start
 
@@ -75,7 +75,7 @@ python src/main.phy {CPU, GPU, batchedGEMM} {new, resume} -h
 ```
 
 ## Examples
-In all the following examples we use the same simulation parameters: '19' lattice sites, subsystem of size '9', coupling parameter '2.5', '1000' Monte Carlo simulation steps with '10000000' steps finally calculated.
+In all the following examples we use the same simulation parameters: **19** lattice sites, subsystem of size **9**, coupling parameter **2.5**, **1000** Monte Carlo simulation steps with **10000000** steps finally calculated.
 
 ### CPU version
 Starting a simulation takes up all the available computing cores and processors of a computer.
@@ -84,8 +84,8 @@ Starting a simulation takes up all the available computing cores and processors 
 python src/main CPU new --N 19 --R 9 --L 2.5 -- MC 1000 -w 10000000
 ```
 
-Multiple Monte Carlo simulations can be computed simultaneously with 'MPI' by starting 'N' simulations, but all 'MPI' processes would compete for resources (CPU cores). To work around this problem, set the number of cores that can be used per simulation (i.e. per MPI rank).
-If your system has 96 cores and you want to run 8 Monte Carlo simulations, you must set the number of threads per MPI rank ('OMP_NUM_ THREADS') to 12.
+Multiple Monte Carlo simulations can be computed simultaneously with `MPI` by starting `N` simulations, but all `MPI` processes would compete for resources (CPU cores). To work around this problem, set the number of cores that can be used per simulation (i.e. per MPI rank).
+If your system has 96 cores and you want to run 8 Monte Carlo simulations, you must set the number of threads per MPI rank (`OMP_NUM_ THREADS`) to 12.
 
 ```bash 
 export OMP_NUM_THREADS = 12 
@@ -109,7 +109,7 @@ Run a Monte Carlo simulation on a single GPU:
 mpirun -n 4 python src/main.py GPU new --N 19 --R 9 --L 2.5 -- MC 1000 -w 10000000
 ```
 
-Multiple simulations can be computed simultaneously using 'MPI' to run 'N' simulations that distribute the 'MPI' process across multiple GPUs present in the system. If you start 12 simulations on a system with 4 GPUs, 3 simulations will be run per GPU and each simulation will create its own process context, resulting in competition for resources. To solve this problem, start NVIDIA Multi-Process Service ([MPS](https://docs.nvidia.com/deploy/mps/index.html)) before running the simulations and stop it after running.
+Multiple simulations can be computed simultaneously using `MPI` to run `N` simulations that distribute the `MPI` process across multiple GPUs present in the system. If you start 12 simulations on a system with 4 GPUs, 3 simulations will be run per GPU and each simulation will create its own process context, resulting in competition for resources. To solve this problem, start NVIDIA Multi-Process Service ([MPS](https://docs.nvidia.com/deploy/mps/index.html)) before running the simulations and stop it after running.
 
 ```bash 
 nvidia-cuda-mps-control -d
@@ -118,13 +118,13 @@ mpirun -n 4 python src/main.py GPU new --N 19 --R 9 --L 2.5 -- MC 1000 -w 100000
 ```
 
 ### batchedGEMM version
-The number of simulations computed on a single GPU is specified with the parsing argument '--bs'. To set a run with 8 simulations on a GPU, execute:
+The number of simulations computed on a single GPU is specified with the parsing argument `--bs`. To set a run with 8 simulations on a GPU, execute:
 
 ```bash 
 python src/main.py batchedGEMM new --N 19 --R 9 --L 2.5 -- MC 1000 -w 10000000 --bs 8
 ```
 
-There is an upper limit to the number of simulations that can be run on a single graphics card, so it is possible to run multiple 'batchedGEMMs' simultaneously. It is recommended to run a single batchedGEMM version per GPU. In the next example, 4 'batchedGEMMs' are run on a system with 4 GPUs, with each 'batchedGEMM' running 8 simulations for a total of 32 Monte Carlo simulations:
+There is an upper limit to the number of simulations that can be run on a single graphics card, so it is possible to run multiple `batchedGEMMs` simultaneously. It is recommended to run a single batchedGEMM version per GPU. In the next example, 4 `batchedGEMMs` are run on a system with 4 GPUs, with each `batchedGEMM` running 8 simulations for a total of 32 Monte Carlo simulations:
 
 ```bash 
 mpirun -n 4 python src/main.py batchedGEMM new --N 19 --R 9 --L 2.5 -- MC 100 -w 10000000 --bs 8
