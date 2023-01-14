@@ -81,18 +81,46 @@ Use positional arguments to select the desired version. CLI also provides inform
 python src/main.phy {CPU, GPU, batchedGEMM} {new, resume} -h
 ```
 
-### Run multiple simulations in parallel
-By using `MPI`, several simulations (Monte Carlo simulations) can be calculated at the same time. 
+## Examples
+In all the following examples we will use the same simulation parameters: `19` lattice sites, subsystem of size `9`, coupling parameter `2.5`, `1000` Monte Carlo simulations steps with `10000000` steps to be finally calculated.
 
-An example: start a new run on `4` MPI processes (ranks) with `19` lattice sites, subsystem of size `9`, coupling parameter `2.5`, `100` Monte Carlo simulations with `10000000` steps each.
+### CPU version
+Starting a simulation takes up all processor resources.
+```bash
+python src/main CPU new --N 19 --R 9 --L 2.5 --MC 1000 -w 10000000
+```
+Multiple simulation can be calculated simultaneously using `MPI` to start `N` simulations, but each `MPI` process would compete for resources (CPU cores). To overcome this problem, set the number of cores that can be used per simulation. If you have 96 cores and want to run 8 simulations, you must set the environment variable 'OMP_NUM_ THREADS' to 12. 
 
 ```bash
-mpirun -n 4 python src/main.py GPU new --N 19 --R 9 --L 2.5 --MC 100 -w 10000000
+export OMP_NUM_THREADS=12
+mpirun -n 8 python src/main CPU new --N 19 --R 9 --L 2.5 --MC 1000 -w 10000000
 ```
 
-### Examples
+### GPU version
+Starting a simulation computed on a single graphics card:
+'''bash mpirun -n 4 python src/main.py GPU new --N 19 --R 9 --L 2.5 -- MC 100 -w 10000000
+'''
+Multiple simulations can be computed simultaneously using 'MPI' to run "N' simulations, distributing the "MPI' process across multiple GPUs present in the system. 12 simulations on a system with 4 GPUs would calculate 3 simulations per GP and each simulation creates personal process context effectively leads to competition for resources. To overcome this problem, start NVIDIA Multi-Process Service ([MPS](https://docs.nvidia.com/deploy/mps/index.html)) before running simulations and after executing, shut it down:
+```bash
+nvidia-cuda-mps-control -d
 
-To be done
+sleep 10
+
+mpirun -n 4 python src/main.py GPU new --N 19 --R 9 --L 2.5 --MC 100 -w 10000000
+echo quit | nvidia-cuda-mps-control
+```
+
+### batchedGEMM version
+For batchedGEMM version number of simulations calculated on single GPU is set with parsing argument `--bs`. For 8 simulations:
+```bash
+python src/main.py batchedGEMM new --N 19 --R 9 --L 2.5 --MC 100 -w 10000000 --bs 8
+```
+There is an upper limit to the number of simulations that can be run on a single graphics card, so it is possible to  run multiple batch GEMM versions simultaneously. It is recommended to run a single batchedGEMM version on a GPU. In the next example, 4 'batchedGEMM' are run on a system with 4 GPUs, with each 'batchedGEMM' running 8 simulations, for a total of 32 simulations:
+
+```bash
+mpirun -n 4 python src/main.py batchedGEMM new --N 19 --R 9 --L 2.5 --MC 100 -w 10000000 --bs 8
+
+```
 
 ## Fine-tune the execution
 
