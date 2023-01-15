@@ -129,6 +129,16 @@ There is an upper limit to the number of simulations that can be run on a single
 ```bash 
 mpirun -n 4 python src/main.py batchedGEMM new --N 19 --R 9 --L 2.5 -- MC 100 -w 10000000 --bs 8
 ```
+### Resume simulation
+After the simulation is started with `new`, the configuration file and simulation states are saved in the folder specified with the optional input parameter `--f` (default folder name `saved_sates_N_R_L`). Using the `resume` argument and specifying the folder where the configuration file and simulation states are located, the entire simulation is resumed from the last step. With the parameter `-- MC` can be selected how many additional steps to the desired steps selected from `new` should be calculated. Continuation of simulation should be done according to the number of MOnte Carlo simulations already calculated. If you want to continue the simulation with 32 Monte Carlo simulations, you can do this on the `CPU`/`GPU` version
+```bash
+mpirun -n 32 python src/main CPU/GPU resume saved_states_19_9_2.5 --MC 10000
+```
+or in the batchedGEMM version with 8 Monte Carlo simulation per GPU
+```
+mpirun -n 4 python src/main bathcedGEMM resume saved_states_19_9_2.5 --MC 10000 --bs 8
+
+```
 
 ## Fine-tune the execution
 
