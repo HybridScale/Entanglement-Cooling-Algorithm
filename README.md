@@ -130,11 +130,12 @@ There is an upper limit to the number of simulations that can be run on a single
 mpirun -n 4 python src/main.py batchedGEMM new --N 19 --R 9 --L 2.5 -- MC 100 -w 10000000 --bs 8
 ```
 ### Resume simulation
-After the simulation is started with `new`, the configuration file and simulation states are saved in the folder specified with the optional input parameter `--f` (default folder name `saved_sates_N_R_L`). Using the `resume` argument and specifying the folder where the configuration file and simulation states are located, the entire simulation is resumed from the last step. With the parameter `-- MC` can be selected how many additional steps to the desired steps selected from `new` should be calculated. Continuation of simulation should be done according to the number of MOnte Carlo simulations already calculated. If you want to continue the simulation with 32 Monte Carlo simulations, you can do this on the `CPU`/`GPU` version
+After the simulation is started with `new`, the configuration file and simulation states are saved in the folder specified with the optional input parameter `--f` (default folder name `saved_sates_N_R_L`). Using the `resume` argument and specifying the folder where the configuration file and simulation states are located, the entire simulation is resumed from the last step. With the parameter `--MC` can be selected how many additional steps to the desired steps selected from `new` should be calculated. Continuation of simulation should be done according to the number of Monte Carlo simulations already calculated. If you want to continue the simulation with 32 Monte Carlo simulations, you can do this on the `CPU`/`GPU` versions:
+
 ```bash
-mpirun -n 32 python src/main CPU/GPU resume saved_states_19_9_2.5 --MC 10000
+mpirun -n 32 python src/main.py {CPU,GPU} resume saved_states_19_9_2.5 --MC 10000
 ```
-or in the batchedGEMM version with 8 Monte Carlo simulation per GPU
+or in the `batchedGEMM` version with 8 Monte Carlo simulation per GPU:
 ```
 mpirun -n 4 python src/main bathcedGEMM resume saved_states_19_9_2.5 --MC 10000 --bs 8
 
@@ -166,11 +167,11 @@ This repository mirrors the principal repository of the code on Bitbucket. If yo
 
 Description of the computational model and the entanglement cooling with Metropolis Monte Carlo:
 
-J. Odavić, G. Torre, N. Mijić, D. Davidović, F. Franchini, S. M. Giampaolo.  *Random unitaries, Robustness, and Complexity of Entanglement*. [arXiv:2210.13495](https://doi.org/10.48550/arXiv.2210.13495)
+- J. Odavić, G. Torre, N. Mijić, D. Davidović, F. Franchini, S. M. Giampaolo.  *Random unitaries, Robustness, and Complexity of Entanglement*. [arXiv:2210.13495](https://doi.org/10.48550/arXiv.2210.13495)
 
 The code and parallelisation on distributed multi-GPU computing architectures:
 
-N. Mijic, D. Davidovic. *Batched matrix operations on distributed GPUs with application in theoretical physics.* 45th Jubilee International Convention on Information, Communication and Electronic Technology (MIPRO), 2022, pp. 293-299, [doi: 10.23919/MIPRO55190.2022.9803591](http://dx.doi.org/10.23919/mipro55190.2022.9803591).
+- N. Mijic, D. Davidovic. *Batched matrix operations on distributed GPUs with application in theoretical physics.* 45th Jubilee International Convention on Information, Communication and Electronic Technology (MIPRO), 2022, pp. 293-299, [doi: 10.23919/MIPRO55190.2022.9803591](http://dx.doi.org/10.23919/mipro55190.2022.9803591).
 
 
 The full paper is available [here](http://fulir.irb.hr/7514/).
