@@ -149,15 +149,15 @@ To be done
 
 ### The main code
 
-- Jovan Odavić 
+- [Jovan Odavić](https://github.com/dzovan137) 
 - Gianpaolo Torre
 - Fabio Franchini
 - Salvatore Marco Gaimpaolo
 
 ### GPU parallelisation and code optimisation
 
-- Davor Davidović
-- Nenad Mijić
+- [Davor Davidović](https://github.com/ddavidovic)
+- [Nenad Mijić](https://github.com/Nenad03)
 
 ## Contribution
 
