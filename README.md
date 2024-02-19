@@ -167,14 +167,11 @@ This repository mirrors the principal repository of the code on Bitbucket. If yo
 
 Description of the computational model and the entanglement cooling with Metropolis Monte Carlo:
 
-- J. Odavić, G. Torre, N. Mijić, D. Davidović, F. Franchini, S. M. Giampaolo.  *Random unitaries, Robustness, and Complexity of Entanglement*. [arXiv:2210.13495](https://doi.org/10.48550/arXiv.2210.13495)
+- J. Odavić, G. Torre, N. Mijić, D. Davidović, F. Franchini, S. M. Giampaolo.  *Random unitaries, Robustness, and Complexity of Entanglement*, Quantum 7, 1115 (2023), [doi: 10.22331/q-2023-09-15-1115](https://doi.org/10.22331/q-2023-09-15-1115) ([pdf](https://quantum-journal.org/papers/q-2023-09-15-1115/))
 
 The code and parallelisation on distributed multi-GPU computing architectures:
 
-- N. Mijic, D. Davidovic. *Batched matrix operations on distributed GPUs with application in theoretical physics.* 45th Jubilee International Convention on Information, Communication and Electronic Technology (MIPRO), 2022, pp. 293-299, [doi: 10.23919/MIPRO55190.2022.9803591](http://dx.doi.org/10.23919/mipro55190.2022.9803591).
-
-
-The full paper is available [here](http://fulir.irb.hr/7514/).
+- N. Mijic, D. Davidovic. *Batched matrix operations on distributed GPUs with application in theoretical physics.* 45th Jubilee International Convention on Information, Communication and Electronic Technology (MIPRO), 2022, pp. 293-299, [doi: 10.23919/MIPRO55190.2022.9803591](http://dx.doi.org/10.23919/mipro55190.2022.9803591). ([pdf](http://fulir.irb.hr/7514/)).
 
 ## Copyright and License
 
